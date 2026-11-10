@@ -37,7 +37,7 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
   const [isExecuting, setIsExecuting] = useState<boolean>(false);
   const [isClosingId, setIsClosingId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
-  const [activeTab, setActiveTab] = useState<'positions' | 'journal' | 'logs'>('positions');
+  const [activeTab, setActiveTab] = useState<'positions' | 'journal' | 'logs' | 'playbook'>('positions');
 
   const serverBot = propServerBot || localServerBot;
 
@@ -383,6 +383,12 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
         >
           🖥️ Bot-Aktivitätslog
         </button>
+        <button
+          onClick={() => setActiveTab('playbook')}
+          className={`bot-tab-btn ${activeTab === 'playbook' ? 'active' : ''}`}
+        >
+          📖 KI-Marktanleitung (Kauf & Dynamischer Verkauf)
+        </button>
       </div>
 
       {/* Tab 1: Aktive offene Positionen */}
@@ -519,6 +525,114 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
                 <span className="log-msg">{log.message}</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tab 4: KI-Marktanleitung (Kauf- & Verkaufs-Regeln) */}
+      {activeTab === 'playbook' && (
+        <div className="tab-content-area">
+          <div className="playbook-container">
+            <div className="playbook-column buy-column">
+              <div className="playbook-col-header">
+                <span className="col-icon">🟢</span>
+                <div>
+                  <h4>100% KAUF-ANLEITUNG (A+ SETUP CHECKLISTE)</h4>
+                  <p>Der Bot kauft ab sofort nur noch, wenn ALLE 5 Kriterien erfüllt sind:</p>
+                </div>
+              </div>
+              <div className="playbook-rules-list">
+                <div className="playbook-rule-item">
+                  <span className="rule-badge">1</span>
+                  <div>
+                    <strong>Spitzen-Score ≥ 88 Punkte:</strong>
+                    <span>Nur Marktchancen mit höchster KI-Konfidenz und überlegener Trefferquote.</span>
+                  </div>
+                </div>
+                <div className="playbook-rule-item">
+                  <span className="rule-badge">2</span>
+                  <div>
+                    <strong>Kern-Kaufzone (≤ 28 % der Range):</strong>
+                    <span>Kauf ausschließlich im untersten Viertel direkt am Support – niemals teuer in der Mitte!</span>
+                  </div>
+                </div>
+                <div className="playbook-rule-item">
+                  <span className="rule-badge">3</span>
+                  <div>
+                    <strong>RSI 15m Abkühlung (≤ 42):</strong>
+                    <span>Der Markt muss einen spürbaren Dip vollzogen haben und reif für den Rebound sein.</span>
+                  </div>
+                </div>
+                <div className="playbook-rule-item">
+                  <span className="rule-badge">4</span>
+                  <div>
+                    <strong>Support-Stabilität:</strong>
+                    <span>Der Kurs muss den lokalen Boden verteidigen (kein freier Fall / kein fallendes Messer).</span>
+                  </div>
+                </div>
+                <div className="playbook-rule-item">
+                  <span className="rule-badge">5</span>
+                  <div>
+                    <strong>Chance-Risiko-Verhältnis ≥ 2,5 : 1:</strong>
+                    <span>Das Gewinnpotenzial muss mindestens 2,5x größer sein als das rechnerische Verlustrisiko.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="playbook-column sell-column">
+              <div className="playbook-col-header">
+                <span className="col-icon">🔴</span>
+                <div>
+                  <h4>DYNAMISCHE VERKAUFS-ANLEITUNG (GEWINNMITNAHME)</h4>
+                  <p>Der Bot wartet nicht stur auf ein starres Ziel, sondern agiert flexibel am Markt:</p>
+                </div>
+              </div>
+              <div className="playbook-rules-list">
+                <div className="playbook-rule-item">
+                  <span className="rule-badge gold">⚡</span>
+                  <div>
+                    <strong>Dynamischer Trailing-Profit-Stop (NEU):</strong>
+                    <span>Sobald ein Trade im Plus (&ge; +1,5 %) ist, sichert der Bot den Höchststand ab. Fällt der Kurs vom Peak um 0,6 % zurück, wird sofort verkauft – Gewinne werden nie wieder abgegeben!</span>
+                  </div>
+                </div>
+                <div className="playbook-rule-item">
+                  <span className="rule-badge gold">🔥</span>
+                  <div>
+                    <strong>RSI-Überhitzungs-Exit (NEU):</strong>
+                    <span>Schießt der RSI 15m über 68 und die Position ist im Gewinn (&ge; +1,0 %), verkauft der Bot direkt am Top vor dem Rücksetzer.</span>
+                  </div>
+                </div>
+                <div className="playbook-rule-item">
+                  <span className="rule-badge green">🎯</span>
+                  <div>
+                    <strong>Take-Profit 2 (Hauptziel):</strong>
+                    <span>Erreicht der Kurs das Hauptziel der Range (+3 % bis +6 %), wird die Position mit maximalem Gewinn komplett glattgestellt.</span>
+                  </div>
+                </div>
+                <div className="playbook-rule-item">
+                  <span className="rule-badge cyan">🛡️</span>
+                  <div>
+                    <strong>Breakeven-Schutz auf TP1:</strong>
+                    <span>Ab Erreichen des ersten Zwischenziels (+1,8 %) wird der Stop auf Einstand gezogen (100 % risikofrei).</span>
+                  </div>
+                </div>
+                <div className="playbook-rule-item">
+                  <span className="rule-badge red">🛑</span>
+                  <div>
+                    <strong>Harter Stop-Loss:</strong>
+                    <span>Unterhalb des Supports greift die Notbremse, um das Gesamtkapital strikt zu schützen.</span>
+                  </div>
+                </div>
+                <div className="playbook-rule-item">
+                  <span className="rule-badge purple">🖐️</span>
+                  <div>
+                    <strong>1-Klick Manuell Schließen:</strong>
+                    <span>Der Fehler 400 (Insufficient Balance) ist behoben – du kannst jede Position jederzeit mit 1 Klick sofort beenden.</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}

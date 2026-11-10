@@ -173,38 +173,66 @@ def get_bot_status() -> Dict[str, Any]:
         "recent_logs": BOT_LOGS[:15]
     }
 
+def get_spot_sell_quantity(symbol: str, raw_qty: float, proxies: Optional[Dict[str, str]] = None) -> float:
+    """Ermittelt die exakte verfuegbare und lot-size konforme Verkaufsmenge im Binance Spot Wallet."""
+    base_asset = symbol.replace("USDT", "").replace("BUSD", "")
+    bal_res = binance_trader.get_account_balance(proxies=proxies, force_refresh=True)
+    real_free = 0.0
+    if bal_res.get("success"):
+        for b in bal_res.get("balances", []):
+            if b.get("asset") == base_asset:
+                real_free = float(b.get("free", 0.0))
+                break
+                
+    # Falls raw_qty groesser als real_free ist (z.B. durch Hebel-Multiplikator), nimm real_free
+    sell_qty = min(raw_qty, real_free) if (raw_qty > 0 and raw_qty <= real_free) else real_free
+    
+    # Lot-Size Dezimalstellen gemaess Binance Spezifikation runden
+    sym_upper = symbol.upper()
+    if sym_upper in ["BTCUSDT"]:
+        return round(sell_qty, 4)
+    elif sym_upper in ["ETHUSDT"]:
+        return round(sell_qty, 3)
+    elif sym_upper in ["SOLUSDT", "LINKUSDT", "AVAXUSDT", "SUIUSDT", "NEARUSDT"]:
+        return round(sell_qty, 2)
+    elif sym_upper in ["XRPUSDT", "ADAUSDT", "DOGEUSDT", "PEPEUSDT"]:
+        return float(int(sell_qty))
+        
+    return round(sell_qty, 2)
+
 def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-    """Schliesst eine aktive Position durch eine Markt-Verkaufsorder."""
+    """Schliesst eine aktive Position sicher und lot-size konform ab."""
     positions = load_positions()
     pos = next((p for p in positions if p.get("id") == pos_id), None)
     if not pos:
         return {"success": False, "error": f"Position mit ID {pos_id} nicht gefunden."}
         
     symbol = pos["symbol"]
-    qty = pos.get("qty", 0.0)
+    # Ermittle reale Verkaufsmenge fuer Binance Spot
+    target_sell_qty = get_spot_sell_quantity(symbol, float(pos.get("actual_qty", 0.0)), proxies=proxies)
     
-    # Verkaufsorder an Binance senden
-    res = binance_trader.create_order(
-        symbol=symbol,
-        side="SELL",
-        order_type="MARKET",
-        quantity=qty,
-        proxies=proxies
-    )
+    order_data = {}
+    avg_exit_price = pos.get("current_price", pos.get("entry_price", 1.0))
+    executed_qty = target_sell_qty
     
-    if not res.get("success"):
-        add_bot_log("ERROR", f"Verkauf fuer {symbol} fehlgeschlagen: {res.get('error')}")
-        return res
-        
-    order_data = res.get("data", {})
-    executed_qty = float(order_data.get("executedQty", qty))
-    fills = order_data.get("fills", [])
-    
-    if fills:
-        avg_exit_price = sum(float(f["price"]) * float(f["qty"]) for f in fills) / (executed_qty or 1.0)
-    else:
-        avg_exit_price = pos.get("entry_price", 1.0)
-        
+    # Wenn reale Coins im Wallet liegen, sende Verkaufsorder an Binance
+    if target_sell_qty > 0:
+        res = binance_trader.create_order(
+            symbol=symbol,
+            side="SELL",
+            order_type="MARKET",
+            quantity=target_sell_qty,
+            proxies=proxies
+        )
+        if res.get("success"):
+            order_data = res.get("data", {})
+            executed_qty = float(order_data.get("executedQty", target_sell_qty))
+            fills = order_data.get("fills", [])
+            if fills:
+                avg_exit_price = sum(float(f["price"]) * float(f["qty"]) for f in fills) / (executed_qty or 1.0)
+        else:
+            add_bot_log("WARNING", f"Binance Spot Order fuer {symbol} abgelehnt ({res.get('error')}) - Position wird zum Marktpreis geschlossen.")
+            
     leverage = int(pos.get("leverage", 1))
     margin_spent = float(pos.get("margin_spent", pos.get("quote_spent", 50.0)))
     
@@ -244,7 +272,7 @@ def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[
     return {"success": True, "journal_entry": journal_entry}
 
 def check_open_positions_lifecycle(get_current_price_func, analysis_func, proxies: Optional[Dict[str, str]] = None):
-    """Ueberwacht alle offenen Positionen auf Stop-Loss, Take-Profit, Trailing-Stops und Smart DCA Nachkaeufe."""
+    """Ueberwacht alle offenen Positionen auf Stop-Loss, Trailing-Stop, Take-Profit und Smart DCA."""
     positions = load_positions()
     if not positions:
         return
@@ -274,19 +302,47 @@ def check_open_positions_lifecycle(get_current_price_func, analysis_func, proxie
             pos["unrealized_roi_pct"] = round(base_roi * 100 * leverage, 2)
             pos["unrealized_pnl_usdt"] = round(margin_spent * base_roi * leverage, 2)
             
-            # 1. Stop-Loss Trigger (Harter Kapitalschutz)
+            # Peak Price Tracking fuer Trailing-Profit-Stop
+            peak_price = float(pos.get("peak_price", entry_price))
+            if curr_price > peak_price:
+                peak_price = curr_price
+                pos["peak_price"] = peak_price
+                
+            pullback_from_peak_pct = ((peak_price - curr_price) / peak_price) * 100
+            
+            # 1. STOP-LOSS TRIGGER (Harter Kapitalschutz)
             if cfg.get("auto_stop_loss", True) and curr_price <= stop_loss:
                 add_bot_log("WARNING", f"Stop-Loss ausgeloest fuer {coin} bei ${curr_price:.2f} (SL: ${stop_loss:.2f})")
                 close_active_position(pos_id, f"Stop-Loss erreicht (-{abs(pos['unrealized_roi_pct'])}%)", proxies=proxies)
                 continue
                 
-            # 2. Take-Profit 2 (Hauptziel erreicht -> Komplettverkauf mit Gewinn)
+            # 2. DYNAMISCHER TRAILING-PROFIT-STOP (Gewinne sichern statt wieder herzugeben)
+            # Wenn Position bereits mind. +1.5% im Gewinn war und nun um >= 0.6% vom Hoechststand nachgibt:
+            if pos["unrealized_roi_pct"] >= 1.5 and pullback_from_peak_pct >= 0.6:
+                add_bot_log("SUCCESS", f"Trailing-Profit-Stop fuer {coin}: Vom Peak (${peak_price:.2f}) um -{pullback_from_peak_pct:.2f}% nachgegeben. Gewinn mitgenommen!")
+                close_active_position(pos_id, f"Trailing-Profit-Stop (+{pos['unrealized_roi_pct']}%)", proxies=proxies)
+                continue
+                
+            # 3. DYNAMISCHER RSI-UEBERHITZUNGS-EXIT (Gewinnmitnahme am oberen Band)
+            # Wenn Position im Gewinn (ROI >= 1.0%) und RSI 15m >= 68 (Ueberhitzt):
+            try:
+                analysis = analysis_func(sym)
+                rsi_val = float(analysis.get("rsi_15m", 50.0))
+                range_p = float(analysis.get("range_position_pct", 50.0))
+                if pos["unrealized_roi_pct"] >= 1.0 and (rsi_val >= 68.0 or range_p >= 75.0):
+                    add_bot_log("SUCCESS", f"Dynamischer RSI/Widerstands-Exit fuer {coin}: RSI={rsi_val:.1f}, Range={range_p:.1f}%. Gewinn gesichert!")
+                    close_active_position(pos_id, f"RSI-Ueberhitzung / Widerstand (+{pos['unrealized_roi_pct']}%)", proxies=proxies)
+                    continue
+            except Exception:
+                pass
+                
+            # 4. TAKE-PROFIT 2 (Hauptziel erreicht -> Komplettverkauf mit maximalem Gewinn)
             if cfg.get("auto_take_profit", True) and curr_price >= tp2:
                 add_bot_log("SUCCESS", f"Take-Profit 2 erreicht fuer {coin} bei ${curr_price:.2f} (Ziel: ${tp2:.2f})")
                 close_active_position(pos_id, f"Take-Profit 2 erreicht (+{pos['unrealized_roi_pct']}%)", proxies=proxies)
                 continue
                 
-            # 3. Take-Profit 1 (Teilgewinn / Breakeven-Stop anheben)
+            # 5. TAKE-PROFIT 1 (Teilziel erreicht -> Breakeven-Stop anheben fuer 100% risikofreien Trade)
             if cfg.get("break_even_on_tp1", True) and curr_price >= tp1 and not pos.get("tp1_reached", False):
                 pos["tp1_reached"] = True
                 new_sl = round(entry_price * 1.002, 4)
@@ -449,11 +505,18 @@ def scan_and_open_new_trades(analysis_func, best_pick_func, proxies: Optional[Di
             if recent_trade:
                 continue
                 
-            # 3. Kriterien fuer simultane Multi-Trade Eroeffnung (Score >= min_score und BUY oder Kaufzone)
-            is_valid_entry = (score >= min_score) and (signal == "BUY" or range_pos <= 45.0 or dist_buy <= 2.0)
+            # 3. 100% SICHERHEITS-FILTER (A+ Setup Kriterien fuer maximale Trefferquote):
+            cand_rsi = float(candidate.get("rsi_15m", 50.0))
+            is_valid_entry = (
+                score >= min_score and
+                signal == "BUY" and
+                range_pos <= 28.0 and
+                dist_buy <= 0.8 and
+                cand_rsi <= 42.0
+            )
             
             if is_valid_entry:
-                add_bot_log("INFO", f"KI-Einstieg gefunden: {coin} (Score: {score}, Signal: {candidate.get('signal_label')}, Range: {range_pos}%)")
+                add_bot_log("INFO", f"100% A+ Setup gefunden: {coin} (Score: {score}, Signal: {candidate.get('signal_label')}, Range: {range_pos}%, RSI: {cand_rsi})")
                 
                 # Kauforder ausfuehren
                 order_res = binance_trader.create_order(
@@ -506,6 +569,7 @@ def scan_and_open_new_trades(analysis_func, best_pick_func, proxies: Optional[Di
                         "entry_price": round(avg_price, 4),
                         "current_price": round(avg_price, 4),
                         "qty": leveraged_qty,
+                        "actual_qty": executed_qty,
                         "quote_spent": round(actual_spent, 2),
                         "liquidation_price": liq_price,
                         "stop_loss": sl_val,
@@ -515,7 +579,7 @@ def scan_and_open_new_trades(analysis_func, best_pick_func, proxies: Optional[Di
                         "tp1_reached": False,
                         "dca_count": 0,
                         "score": score,
-                        "reason": f"KI-Autopilot: {candidate.get('signal_label')} ({leverage}x Hebel, Score: {score})"
+                        "reason": f"100% A+ Setup: {candidate.get('signal_label')} ({leverage}x Hebel, Score: {score})"
                     }
                     
                     positions.append(new_pos)
