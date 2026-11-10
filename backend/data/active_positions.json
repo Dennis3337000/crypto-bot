@@ -8,7 +8,7 @@
     "margin_spent": 149.89,
     "notional_value": 7494.26,
     "entry_price": 74200.58,
-    "current_price": 74622.01,
+    "current_price": 74337.18,
     "qty": 0.101,
     "quote_spent": 149.89,
     "liquidation_price": 72894.6498,
@@ -18,8 +18,8 @@
     "entered_at": 1794314589,
     "tp1_reached": false,
     "dca_count": 0,
-    "unrealized_pnl_usdt": 42.57,
-    "unrealized_roi_pct": 28.4,
+    "unrealized_pnl_usdt": 13.8,
+    "unrealized_roi_pct": 9.2,
     "score": 38.02,
     "reason": "50x Hebel: Support-Bounce / Oversold Dip-Kauf"
   },
@@ -32,7 +32,7 @@
     "margin_spent": 149.94,
     "notional_value": 3748.51,
     "entry_price": 84.76,
-    "current_price": 84.76,
+    "current_price": 84.2,
     "qty": 44.225,
     "quote_spent": 149.94,
     "liquidation_price": 81.7764,
@@ -42,8 +42,8 @@
     "entered_at": 1794314607,
     "tp1_reached": false,
     "dca_count": 0,
-    "unrealized_pnl_usdt": 0.0,
-    "unrealized_roi_pct": 0.0,
+    "unrealized_pnl_usdt": -24.77,
+    "unrealized_roi_pct": -16.52,
     "score": 37.29,
     "reason": "25x Hebel: Support-Bounce / Oversold Dip-Kauf"
   },
@@ -56,7 +56,7 @@
     "margin_spent": 150.0,
     "notional_value": 2999.93,
     "entry_price": 10.46,
-    "current_price": 10.539,
+    "current_price": 10.483,
     "qty": 286.8,
     "quote_spent": 150.0,
     "liquidation_price": 9.9998,
@@ -66,8 +66,8 @@
     "entered_at": 1794314635,
     "tp1_reached": false,
     "dca_count": 0,
-    "unrealized_pnl_usdt": 22.66,
-    "unrealized_roi_pct": 15.11,
+    "unrealized_pnl_usdt": 6.6,
+    "unrealized_roi_pct": 4.4,
     "score": 38.18,
     "reason": "20x Hebel: Support-Bounce / Oversold Dip-Kauf"
   },
@@ -80,7 +80,7 @@
     "margin_spent": 149.97,
     "notional_value": 2999.4,
     "entry_price": 8.304,
-    "current_price": 8.382,
+    "current_price": 8.365,
     "qty": 361.2,
     "quote_spent": 149.97,
     "liquidation_price": 7.9386,
@@ -90,8 +90,8 @@
     "entered_at": 1794314647,
     "tp1_reached": false,
     "dca_count": 0,
-    "unrealized_pnl_usdt": 28.17,
-    "unrealized_roi_pct": 18.79,
+    "unrealized_pnl_usdt": 22.03,
+    "unrealized_roi_pct": 14.69,
     "score": 34.3,
     "reason": "20x Hebel: Support-Bounce / Oversold Dip-Kauf"
   },
@@ -104,7 +104,7 @@
     "margin_spent": 149.99,
     "notional_value": 7499.37,
     "entry_price": 0.1775,
-    "current_price": 0.1777,
+    "current_price": 0.177,
     "qty": 42250.0,
     "quote_spent": 149.99,
     "liquidation_price": 0.1744,
@@ -116,8 +116,8 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (AKKUMULATIONS-ZONE) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 5.63,
-    "unrealized_pnl_usdt": 8.45
+    "unrealized_roi_pct": -14.08,
+    "unrealized_pnl_usdt": -21.13
   },
   {
     "id": "pos_1794317501128_XRP",
@@ -128,7 +128,7 @@
     "margin_spent": 149.91,
     "notional_value": 4497.15,
     "entry_price": 1.0677,
-    "current_price": 1.0657,
+    "current_price": 1.0586,
     "qty": 4212.0,
     "quote_spent": 149.91,
     "liquidation_price": 1.0364,
@@ -140,8 +140,8 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (30x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": -5.62,
-    "unrealized_pnl_usdt": -8.42
+    "unrealized_roi_pct": -25.57,
+    "unrealized_pnl_usdt": -38.33
   },
   {
     "id": "pos_1794317645688_ETH",
@@ -152,7 +152,7 @@
     "margin_spent": 149.89,
     "notional_value": 4496.59,
     "entry_price": 2061.7123,
-    "current_price": 2085.44,
+    "current_price": 2071.73,
     "qty": 2.181,
     "quote_spent": 149.89,
     "liquidation_price": 2001.2354,
@@ -164,8 +164,8 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (30x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 34.53,
-    "unrealized_pnl_usdt": 51.75
+    "unrealized_roi_pct": 14.58,
+    "unrealized_pnl_usdt": 21.85
   },
   {
     "id": "pos_1794317648821_DOGE",
@@ -176,7 +176,7 @@
     "margin_spent": 150.0,
     "notional_value": 4499.86,
     "entry_price": 0.0689,
-    "current_price": 0.06949,
+    "current_price": 0.06918,
     "qty": 65310.0,
     "quote_spent": 150.0,
     "liquidation_price": 0.0669,
@@ -188,8 +188,8 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (30x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 25.69,
-    "unrealized_pnl_usdt": 38.53
+    "unrealized_roi_pct": 12.19,
+    "unrealized_pnl_usdt": 18.29
   },
   {
     "id": "pos_1794317651469_SUI",
@@ -200,7 +200,7 @@
     "margin_spent": 149.92,
     "notional_value": 4497.66,
     "entry_price": 0.8242,
-    "current_price": 0.8404,
+    "current_price": 0.8345,
     "qty": 5457.0,
     "quote_spent": 149.92,
     "liquidation_price": 0.8,
@@ -212,8 +212,8 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (30x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 58.97,
-    "unrealized_pnl_usdt": 88.4
+    "unrealized_roi_pct": 37.49,
+    "unrealized_pnl_usdt": 56.21
   },
   {
     "id": "pos_1794322697724_NEAR",
@@ -224,7 +224,7 @@
     "margin_spent": 149.96,
     "notional_value": 1499.65,
     "entry_price": 3.712,
-    "current_price": 3.72,
+    "current_price": 3.703,
     "qty": 404.0,
     "quote_spent": 149.96,
     "liquidation_price": 3.3853,
@@ -236,7 +236,7 @@
     "dca_count": 0,
     "score": 65.0,
     "reason": "KI-Autopilot: KAUFEN (BREAKOUT-MOMENTUM) (10x Hebel, Score: 65.0)",
-    "unrealized_roi_pct": 2.16,
-    "unrealized_pnl_usdt": 3.23
+    "unrealized_roi_pct": -2.42,
+    "unrealized_pnl_usdt": -3.64
   }
 ]
