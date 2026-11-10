@@ -144,11 +144,10 @@ def get_bot_status() -> Dict[str, Any]:
     total_pnl = sum(t.get("pnl_usdt", 0) for t in journal)
     win_rate = round((len(wins) / total_trades * 100), 1) if total_trades > 0 else 0.0
     
-    # Berechne Kapital und Portfoliowerte
-    positions_value = sum(
-        float(p.get("qty", 0.0)) * float(p.get("current_price", p.get("entry_price", 0.0)))
-        for p in positions
-    )
+    # Berechne Kapital und Portfoliowerte (Equity = Freies Guthaben + Margin + Floating PnL)
+    total_margin_spent = sum(float(p.get("margin_spent", p.get("quote_spent", 0.0))) for p in positions)
+    total_unrealized_pnl = sum(float(p.get("unrealized_pnl_usdt", 0.0)) for p in positions)
+    positions_value = round(total_margin_spent + total_unrealized_pnl, 2)
     
     usdt_free = CACHED_USDT_FREE
     total_capital = round(usdt_free + positions_value, 2)
@@ -235,9 +234,15 @@ def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[
             
     leverage = int(pos.get("leverage", 1))
     margin_spent = float(pos.get("margin_spent", pos.get("quote_spent", 50.0)))
+    entry_price = float(pos.get("entry_price", avg_exit_price))
     
-    # Gehebelte PnL-Berechnung
-    base_diff = (avg_exit_price - pos["entry_price"]) / pos["entry_price"]
+    # Sanity-Check: Verhindere absurde PnL-Spikes durch fehlerhafte Test-Preise
+    if entry_price <= 0 or abs(avg_exit_price - entry_price) / (entry_price or 1.0) > 0.35:
+        entry_price = avg_exit_price
+        base_diff = 0.0
+    else:
+        base_diff = (avg_exit_price - entry_price) / entry_price
+        
     roi_pct = round(base_diff * 100 * leverage, 2)
     pnl_usdt = round(margin_spent * (base_diff * leverage), 2)
     quote_received = round(margin_spent + pnl_usdt, 2)
