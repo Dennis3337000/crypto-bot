@@ -8,7 +8,7 @@
     "margin_spent": 149.78,
     "notional_value": 748.88,
     "entry_price": 687.05,
-    "current_price": 678.48,
+    "current_price": 677.86,
     "qty": 1.09,
     "quote_spent": 149.78,
     "liquidation_price": 566.1292,
@@ -20,8 +20,8 @@
     "dca_count": 0,
     "score": 58.0,
     "reason": "KI-Autopilot: LIMIT-KAUF VORBEREITEN (5x Hebel, Score: 58.0)",
-    "unrealized_roi_pct": -6.24,
-    "unrealized_pnl_usdt": -9.34
+    "unrealized_roi_pct": -6.69,
+    "unrealized_pnl_usdt": -10.02
   },
   {
     "id": "pos_1794325216293_BTC",
@@ -32,7 +32,7 @@
     "margin_spent": 149.51,
     "notional_value": 7475.74,
     "entry_price": 73291.6,
-    "current_price": 73222.43,
+    "current_price": 73186.01,
     "qty": 0.102,
     "quote_spent": 149.51,
     "liquidation_price": 72001.6678,
@@ -44,8 +44,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": -4.72,
-    "unrealized_pnl_usdt": -7.06
+    "unrealized_roi_pct": -7.2,
+    "unrealized_pnl_usdt": -10.77,
+    "peak_price": 73324.01
   },
   {
     "id": "pos_1794325308368_DOGE",
@@ -56,7 +57,7 @@
     "margin_spent": 149.98,
     "notional_value": 7499.21,
     "entry_price": 0.0675,
-    "current_price": 0.06754,
+    "current_price": 0.06742,
     "qty": 111050.0,
     "quote_spent": 149.98,
     "liquidation_price": 0.0663,
@@ -68,8 +69,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 2.96,
-    "unrealized_pnl_usdt": 4.44
+    "unrealized_roi_pct": -5.93,
+    "unrealized_pnl_usdt": -8.89,
+    "peak_price": 0.06762
   },
   {
     "id": "pos_1794325374817_ADA",
@@ -80,7 +82,7 @@
     "margin_spent": 149.99,
     "notional_value": 7499.4,
     "entry_price": 0.1724,
-    "current_price": 0.1726,
+    "current_price": 0.1724,
     "qty": 43500.0,
     "quote_spent": 149.99,
     "liquidation_price": 0.1694,
@@ -92,8 +94,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 5.8,
-    "unrealized_pnl_usdt": 8.7
+    "unrealized_roi_pct": 0.0,
+    "unrealized_pnl_usdt": 0.0,
+    "peak_price": 0.1728
   },
   {
     "id": "pos_1794325436250_ETH",
@@ -104,7 +107,7 @@
     "margin_spent": 149.97,
     "notional_value": 7498.44,
     "entry_price": 2015.71,
-    "current_price": 2021.21,
+    "current_price": 2020.16,
     "qty": 3.72,
     "quote_spent": 149.97,
     "liquidation_price": 1980.2335,
@@ -116,8 +119,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 13.64,
-    "unrealized_pnl_usdt": 20.46
+    "unrealized_roi_pct": 11.04,
+    "unrealized_pnl_usdt": 16.55,
+    "peak_price": 2022.57
   },
   {
     "id": "pos_1794325437329_AVAX",
@@ -128,7 +132,7 @@
     "margin_spent": 149.97,
     "notional_value": 7498.63,
     "entry_price": 8.133,
-    "current_price": 8.17,
+    "current_price": 8.168,
     "qty": 922.0,
     "quote_spent": 149.97,
     "liquidation_price": 7.9899,
@@ -140,8 +144,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 22.75,
-    "unrealized_pnl_usdt": 34.11
+    "unrealized_roi_pct": 21.52,
+    "unrealized_pnl_usdt": 32.27,
+    "peak_price": 8.188
   },
   {
     "id": "pos_1794325507931_SOL",
@@ -152,7 +157,7 @@
     "margin_spent": 149.95,
     "notional_value": 7497.31,
     "entry_price": 81.67,
-    "current_price": 82.2,
+    "current_price": 82.02,
     "qty": 91.8,
     "quote_spent": 149.95,
     "liquidation_price": 80.2326,
@@ -164,8 +169,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 32.45,
-    "unrealized_pnl_usdt": 48.66
+    "unrealized_roi_pct": 21.43,
+    "unrealized_pnl_usdt": 32.13,
+    "peak_price": 82.25
   },
   {
     "id": "pos_1794325511157_SUI",
@@ -176,7 +182,7 @@
     "margin_spent": 149.99,
     "notional_value": 7499.51,
     "entry_price": 0.8051,
-    "current_price": 0.8116,
+    "current_price": 0.8082,
     "qty": 9315.0,
     "quote_spent": 149.99,
     "liquidation_price": 0.7909,
@@ -188,8 +194,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 40.37,
-    "unrealized_pnl_usdt": 60.55
+    "unrealized_roi_pct": 19.25,
+    "unrealized_pnl_usdt": 28.88,
+    "peak_price": 0.8121
   },
   {
     "id": "pos_1794325577221_XRP",
@@ -200,7 +207,7 @@
     "margin_spent": 149.94,
     "notional_value": 7497.11,
     "entry_price": 1.0391,
-    "current_price": 1.0408,
+    "current_price": 1.0386,
     "qty": 7215.0,
     "quote_spent": 149.94,
     "liquidation_price": 1.0208,
@@ -212,8 +219,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 8.18,
-    "unrealized_pnl_usdt": 12.27
+    "unrealized_roi_pct": -2.41,
+    "unrealized_pnl_usdt": -3.61,
+    "peak_price": 1.0419
   },
   {
     "id": "pos_1794325578340_LINK",
@@ -224,7 +232,7 @@
     "margin_spent": 149.91,
     "notional_value": 4497.32,
     "entry_price": 10.198,
-    "current_price": 10.238,
+    "current_price": 10.212,
     "qty": 441.0,
     "quote_spent": 149.91,
     "liquidation_price": 9.8989,
@@ -236,7 +244,8 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (30x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 11.77,
-    "unrealized_pnl_usdt": 17.64
+    "unrealized_roi_pct": 4.12,
+    "unrealized_pnl_usdt": 6.17,
+    "peak_price": 10.253
   }
 ]
