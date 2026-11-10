@@ -1,0 +1,11 @@
+.env
+*.env
+backend/.env
+frontend/.env.local
+Binance.txt
+*.key
+*.pem
+node_modules/
+__pycache__/
+dist/
+.vercel/

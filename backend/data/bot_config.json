@@ -1,0 +1,17 @@
+{
+  "enabled": true,
+  "order_size_usdt": 150.0,
+  "min_score": 50.0,
+  "max_open_positions": 10,
+  "cooldown_minutes": 1,
+  "scan_interval_seconds": 12,
+  "auto_stop_loss": true,
+  "auto_take_profit": true,
+  "break_even_on_tp1": true,
+  "enable_smart_dca": true,
+  "max_dca_levels": 1,
+  "dca_min_dip_pct": 1.8,
+  "leverage_mode": "AI_DYNAMIC",
+  "max_leverage": 50,
+  "default_leverage": 25
+}
