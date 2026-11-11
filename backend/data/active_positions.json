@@ -8,7 +8,7 @@
     "margin_spent": 150.0,
     "notional_value": 7500.0,
     "entry_price": 73098.81,
-    "current_price": 73716.0,
+    "current_price": 74054.15,
     "qty": 0.1026,
     "actual_qty": 0.00342,
     "quote_spent": 150.0,
@@ -20,9 +20,9 @@
     "dca_count": 0,
     "score": 98.0,
     "reason": "Binance Live Position: BTC Pullback Support Reversal (50x Hebel)",
-    "unrealized_roi_pct": 42.22,
-    "unrealized_pnl_usdt": 63.32,
-    "peak_price": 73716.0
+    "unrealized_roi_pct": 65.35,
+    "unrealized_pnl_usdt": 98.02,
+    "peak_price": 74054.15
   },
   {
     "id": "pos_link_binance_live",
@@ -33,7 +33,7 @@
     "margin_spent": 149.94,
     "notional_value": 2998.8,
     "entry_price": 10.256,
-    "current_price": 10.336,
+    "current_price": 10.338,
     "qty": 292.39,
     "actual_qty": 14.62,
     "quote_spent": 149.94,
@@ -45,8 +45,8 @@
     "dca_count": 0,
     "score": 96.0,
     "reason": "Binance Live Position: LINK Dip-Kauf an Trendline (20x Hebel)",
-    "unrealized_roi_pct": 15.6,
-    "unrealized_pnl_usdt": 23.39,
-    "peak_price": 10.336
+    "unrealized_roi_pct": 15.99,
+    "unrealized_pnl_usdt": 23.98,
+    "peak_price": 10.338
   }
 ]
