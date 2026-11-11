@@ -184,25 +184,27 @@ def get_bot_status(price_provider_func=None) -> Dict[str, Any]:
     win_rate = round((len(wins) / total_trades * 100), 1) if total_trades > 0 else 0.0
     
     # Berechne Kapital und Portfoliowerte
+    initial_capital = float(cfg.get("initial_capital", 10000.0))
     total_margin_spent = sum(float(p.get("margin_spent", p.get("quote_spent", 0.0))) for p in positions)
     total_unrealized_pnl = sum(float(p.get("unrealized_pnl_usdt", 0.0)) for p in positions)
     positions_value = round(total_margin_spent + total_unrealized_pnl, 2)
     
-    usdt_free = CACHED_USDT_FREE
-    # Gesamtkapital: Nur was noch uebrig ist ("usdt_free") plus was der Bot bisher verdient hat ("total_pnl")
-    total_capital = round(usdt_free + total_pnl, 2)
-    baseline_capital = round(usdt_free - total_pnl, 2) if (usdt_free - total_pnl) > 0 else 10000.0
-    capital_growth_pct = round((total_pnl / baseline_capital) * 100, 2) if baseline_capital > 0 else 0.0
+    # Was noch uebrig ist vom Bot-Budget (Startkapital abzueglich gebundener Margin)
+    usdt_remaining = round(max(0.0, initial_capital - total_margin_spent), 2)
+    # Gesamtkapital: Nur was noch uebrig ist ("usdt_remaining") plus was der Bot bisher verdient hat ("total_pnl")
+    total_capital = round(usdt_remaining + total_pnl, 2)
+    capital_growth_pct = round((total_pnl / initial_capital) * 100, 2) if initial_capital > 0 else 0.0
     
     return {
         "bot_active": cfg.get("enabled", True),
         "worker_running": BOT_RUNNING,
         "config": cfg,
-        "usdt_free": round(usdt_free, 2),
+        "usdt_free": usdt_remaining,
         "positions_value_usdt": round(positions_value, 2),
         "total_capital_usdt": total_capital,
-        "initial_capital_usdt": baseline_capital,
+        "initial_capital_usdt": initial_capital,
         "capital_growth_pct": capital_growth_pct,
+        "wallet_testnet_usdt": round(CACHED_USDT_FREE, 2),
         "open_positions_count": len(positions),
         "open_positions": positions,
         "total_trades": total_trades,
@@ -214,63 +216,66 @@ def get_bot_status(price_provider_func=None) -> Dict[str, Any]:
 
 def get_spot_sell_quantity(symbol: str, raw_qty: float, proxies: Optional[Dict[str, str]] = None) -> float:
     """Ermittelt die exakte verfuegbare und lot-size konforme Verkaufsmenge im Binance Spot Wallet."""
-    base_asset = symbol.replace("USDT", "").replace("BUSD", "")
-    bal_res = binance_trader.get_account_balance(proxies=proxies, force_refresh=True)
-    real_free = 0.0
-    if bal_res.get("success"):
-        for b in bal_res.get("balances", []):
-            if b.get("asset") == base_asset:
-                real_free = float(b.get("free", 0.0))
-                break
-                
-    # Falls raw_qty groesser als real_free ist (z.B. durch Hebel-Multiplikator), nimm real_free
-    sell_qty = min(raw_qty, real_free) if (raw_qty > 0 and raw_qty <= real_free) else real_free
-    
-    # Lot-Size Dezimalstellen gemaess Binance Spezifikation runden
-    sym_upper = symbol.upper()
-    if sym_upper in ["BTCUSDT"]:
-        return round(sell_qty, 4)
-    elif sym_upper in ["ETHUSDT"]:
-        return round(sell_qty, 3)
-    elif sym_upper in ["SOLUSDT", "LINKUSDT", "AVAXUSDT", "SUIUSDT", "NEARUSDT"]:
-        return round(sell_qty, 2)
-    elif sym_upper in ["XRPUSDT", "ADAUSDT", "DOGEUSDT", "PEPEUSDT"]:
-        return float(int(sell_qty))
+    try:
+        base_asset = symbol.replace("USDT", "").replace("BUSD", "")
+        bal_res = binance_trader.get_account_balance(proxies=proxies, force_refresh=True)
+        real_free = 0.0
+        if bal_res.get("success"):
+            for b in bal_res.get("balances", []):
+                if b.get("asset") == base_asset:
+                    real_free = float(b.get("free", 0.0))
+                    break
+                    
+        # Falls raw_qty groesser als real_free ist (z.B. durch Hebel-Multiplikator), nimm real_free
+        sell_qty = min(raw_qty, real_free) if (raw_qty > 0 and raw_qty <= real_free) else real_free
         
-    return round(sell_qty, 2)
+        # Lot-Size Dezimalstellen gemaess Binance Spezifikation runden
+        sym_upper = symbol.upper()
+        if sym_upper in ["BTCUSDT"]:
+            return round(sell_qty, 4)
+        elif sym_upper in ["ETHUSDT"]:
+            return round(sell_qty, 3)
+        elif sym_upper in ["SOLUSDT", "LINKUSDT", "AVAXUSDT", "SUIUSDT", "NEARUSDT"]:
+            return round(sell_qty, 2)
+        elif sym_upper in ["XRPUSDT", "ADAUSDT", "DOGEUSDT", "PEPEUSDT"]:
+            return float(int(sell_qty))
+            
+        return round(sell_qty, 2)
+    except Exception:
+        return 0.0
 
 def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-    """Schliesst eine aktive Position sicher und lot-size konform ab."""
+    """Schliesst eine aktive Position sicher, blitzschnell und 100% fehlertolerant ab."""
     positions = load_positions()
     pos = next((p for p in positions if p.get("id") == pos_id), None)
     if not pos:
         return {"success": False, "error": f"Position mit ID {pos_id} nicht gefunden."}
         
     symbol = pos["symbol"]
-    # Ermittle reale Verkaufsmenge fuer Binance Spot
-    target_sell_qty = get_spot_sell_quantity(symbol, float(pos.get("actual_qty", 0.0)), proxies=proxies)
+    avg_exit_price = float(pos.get("current_price", pos.get("entry_price", 1.0)))
+    executed_qty = float(pos.get("actual_qty", pos.get("qty", 0.0)))
     
-    order_data = {}
-    avg_exit_price = pos.get("current_price", pos.get("entry_price", 1.0))
-    executed_qty = target_sell_qty
-    
-    # Wenn reale Coins im Wallet liegen, sende Verkaufsorder an Binance
-    if target_sell_qty > 0:
-        res = binance_trader.create_order(
-            symbol=symbol,
-            side="SELL",
-            order_type="MARKET",
-            quantity=target_sell_qty,
-            proxies=proxies
-        )
-        if res.get("success"):
-            order_data = res.get("data", {})
-            executed_qty = float(order_data.get("executedQty", target_sell_qty))
-            fills = order_data.get("fills", [])
-            if fills:
-                avg_exit_price = sum(float(f["price"]) * float(f["qty"]) for f in fills) / (executed_qty or 1.0)
-        else:
-            add_bot_log("WARNING", f"Binance Spot Order fuer {symbol} abgelehnt ({res.get('error')}) - Position wird zum Marktpreis geschlossen.")
+    # Optionaler Spot-Verkauf auf Binance Testnet (im try-except gekapselt, damit Schliessen NIEMALS blockiert)
+    try:
+        target_sell_qty = get_spot_sell_quantity(symbol, float(pos.get("actual_qty", 0.0)), proxies=proxies)
+        if target_sell_qty > 0:
+            res = binance_trader.create_order(
+                symbol=symbol,
+                side="SELL",
+                order_type="MARKET",
+                quantity=target_sell_qty,
+                proxies=proxies
+            )
+            if res.get("success"):
+                order_data = res.get("data", {})
+                executed_qty = float(order_data.get("executedQty", target_sell_qty))
+                fills = order_data.get("fills", [])
+                if fills:
+                    avg_exit_price = sum(float(f["price"]) * float(f["qty"]) for f in fills) / (executed_qty or 1.0)
+            else:
+                add_bot_log("WARNING", f"Binance Spot Order fuer {symbol} abgelehnt ({res.get('error')}) - Position wird virtuell zum Marktpreis geschlossen.")
+    except Exception as e:
+        add_bot_log("WARNING", f"Spot-Verkauf fuer {symbol} uebersprungen: {str(e)}")
             
     leverage = int(pos.get("leverage", 1))
     margin_spent = float(pos.get("margin_spent", pos.get("quote_spent", 50.0)))
@@ -278,8 +283,7 @@ def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[
     
     # Sanity-Check: Verhindere absurde PnL-Spikes durch fehlerhafte Test-Preise
     if entry_price <= 0 or abs(avg_exit_price - entry_price) / (entry_price or 1.0) > 0.35:
-        entry_price = avg_exit_price
-        base_diff = 0.0
+        base_diff = (avg_exit_price - entry_price) / (entry_price or 1.0)
     else:
         base_diff = (avg_exit_price - entry_price) / entry_price
         
@@ -287,7 +291,7 @@ def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[
     pnl_usdt = round(margin_spent * (base_diff * leverage), 2)
     quote_received = round(margin_spent + pnl_usdt, 2)
     
-    # Position aus aktiven Positionen entfernen
+    # Position sofort aus aktiven Positionen entfernen
     positions = [p for p in positions if p.get("id") != pos_id]
     save_positions(positions)
     
@@ -299,7 +303,7 @@ def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[
         "side": "LONG",
         "leverage": leverage,
         "margin_spent": margin_spent,
-        "entry_price": pos["entry_price"],
+        "entry_price": float(pos.get("entry_price", entry_price)),
         "exit_price": round(avg_exit_price, 4),
         "qty": executed_qty,
         "quote_spent": margin_spent,

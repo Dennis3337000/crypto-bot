@@ -22,11 +22,19 @@ const CACHE_TTL = 8000; // 8 Sekunden Cache
 async function apiFetch(endpoint: string, init?: RequestInit): Promise<Response> {
   try {
     const res = await fetch(endpoint, init);
-    if (res.ok) return res;
-  } catch {
-    // Weiter
+    return res;
+  } catch (err) {
+    if (
+      typeof window !== 'undefined' &&
+      window.location.protocol === 'http:' &&
+      (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+    ) {
+      try {
+        return await fetch(`http://127.0.0.1:8001${endpoint}`, init);
+      } catch {}
+    }
+    throw err;
   }
-  return await fetch(`http://127.0.0.1:8001${endpoint}`, init);
 }
 
 async function binanceGet(endpoint: string, params: Record<string, string | number> = {}): Promise<any> {

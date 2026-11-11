@@ -147,15 +147,26 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
     setIsClosingId(pos.id);
     try {
       const res = await closeServerBotPosition(pos.id);
-      if (res.success) {
+      if (res && res.success) {
+        const closedPnl = res.journal_entry?.pnl_usdt ?? pos.unrealized_pnl_usdt ?? 0;
         setMessage({
-          text: `✓ Position ${pos.coin} erfolgreich zum Marktpreis geschlossen!`,
+          text: `✓ Position ${pos.coin} erfolgreich zum Marktpreis geschlossen! Realisierter PnL: ${closedPnl >= 0 ? '+' : ''}${closedPnl.toFixed(2)} USDT`,
           type: 'success'
+        });
+        // Sofort optimistisch aus lokalem State entfernen fuer verzögerungsfreies UI
+        setLocalServerBot((prev) => {
+          if (!prev) return prev;
+          const remaining = (prev.open_positions || []).filter((p) => p.id !== pos.id);
+          return {
+            ...prev,
+            open_positions: remaining,
+            open_positions_count: remaining.length
+          };
         });
         refreshAll();
       } else {
         setMessage({
-          text: `Fehler beim Schliessen: ${res.error || 'Unbekannt'}`,
+          text: `Fehler beim Schliessen: ${res?.error || 'Unbekannt'}`,
           type: 'error'
         });
       }

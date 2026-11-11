@@ -1,5 +1,6 @@
 {
   "enabled": true,
+  "initial_capital": 10000.0,
   "order_size_usdt": 150.0,
   "min_score": 50.0,
   "max_open_positions": 10,

@@ -99,11 +99,16 @@ export const App: React.FC = () => {
         const totalMargin = updatedPositions.reduce((sum, p) => sum + (p.margin_spent || p.quote_spent || 0), 0);
         const totalUnrealized = updatedPositions.reduce((sum, p) => sum + (p.unrealized_pnl_usdt || 0), 0);
         const posValue = Math.round((totalMargin + totalUnrealized) * 100) / 100;
+        const initialCap = prev.initial_capital_usdt ?? 10000.0;
+        const remainingUsdt = Math.round(Math.max(0, initialCap - totalMargin) * 100) / 100;
+        const totalCap = Math.round((remainingUsdt + (prev.total_pnl_usdt || 0)) * 100) / 100;
 
         return {
           ...prev,
           open_positions: updatedPositions,
-          positions_value_usdt: posValue
+          positions_value_usdt: posValue,
+          usdt_free: remainingUsdt,
+          total_capital_usdt: totalCap
         };
       });
     }, 3000);
