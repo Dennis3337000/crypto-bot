@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { CoinItem, MarketData, TradingAnalysis, BestPick, ServerBotStatus } from './types';
 import { TopBuyBanner } from './components/TopBuyBanner';
-import { PriceChart } from './components/PriceChart';
 import { AutoTradingPanel } from './components/AutoTradingPanel';
 import { TopPortfolioBar } from './components/TopPortfolioBar';
 import { LoginModal } from './components/LoginModal';
@@ -353,17 +352,6 @@ export const App: React.FC = () => {
               </div>
             </div>
           </div>
-
-          {/* 3. INTERAKTIVER PREISCHART (Kerzen/Linie, Timeframes 15m, 1h, 4h, 1d, Crosshair, Volume, Kauf-Range) */}
-          <PriceChart
-            symbol={selectedSymbol}
-            currentPrice={marketData.current_price}
-            supportLevel={analysis.support_level}
-            resistanceLevel={analysis.resistance_level}
-            buyRangeMin={analysis.buy_range_min}
-            buyRangeMax={analysis.buy_range_max}
-            formatPrice={formatPrice}
-          />
 
           {/* 4. TRADING SIGNAL & SETUP (Das Herzstück für den Chef) */}
           <div className={`signal-box signal-${analysis.signal}`}>
