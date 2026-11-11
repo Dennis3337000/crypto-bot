@@ -7,5 +7,4 @@ Binance.txt
 *.pem
 node_modules/
 __pycache__/
-dist/
 .vercel/

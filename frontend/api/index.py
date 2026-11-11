@@ -9,6 +9,7 @@ from typing import Dict, Any, List, Optional
 import requests
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.gzip import GZipMiddleware
 
 app = FastAPI(
     title="CryptoAnalyzer API",
@@ -24,10 +25,12 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# GZip Komprimierung fuer bis zu 70% schnellere Response-Zeiten
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # In-Memory Cache gegen Rate-Limits (mit automatischer Speicherbereinigung)
 CACHE: Dict[str, Dict[str, Any]] = {}
-CACHE_TTL_SECONDS = 8
+CACHE_TTL_SECONDS = 25
 
 def load_proxy_config() -> Dict[str, str]:
     """Laedt optionale Proxy-Konfiguration aus tools/config.json."""
@@ -448,7 +451,7 @@ BEST_PICK_CACHE: Dict[str, Any] = {"timestamp": 0, "data": None}
 def get_best_buy_pick() -> Dict[str, Any]:
     """Scannt alle Coins und ermittelt den aktuell lukrativsten Coin fuer einen Einstieg."""
     now = time.time()
-    if BEST_PICK_CACHE["data"] and (now - BEST_PICK_CACHE["timestamp"] < 25):
+    if BEST_PICK_CACHE["data"] and (now - BEST_PICK_CACHE["timestamp"] < 60):
         return BEST_PICK_CACHE["data"]
         
     evaluated_coins = []
