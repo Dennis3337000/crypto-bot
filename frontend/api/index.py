@@ -589,15 +589,18 @@ def get_trading_balance() -> Dict[str, Any]:
 
 @app.post("/api/trading/order")
 def execute_trade_order(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Platziert eine Kauf- oder Verkaufsorder im Binance Testnet."""
-    symbol = payload.get("symbol", "BTCUSDT")
-    side = payload.get("side", "BUY")
-    order_type = payload.get("order_type", "MARKET")
+    """Platziert eine Kauf- oder Verkaufsorder im Binance Testnet und uebernimmt sie in die offenen Trades."""
+    symbol = payload.get("symbol", "BTCUSDT").upper().strip()
+    if not symbol.endswith("USDT") and not symbol.endswith("BUSD"):
+        symbol = f"{symbol}USDT"
+    coin = symbol.replace("USDT", "").replace("BUSD", "")
+    side = payload.get("side", "BUY").upper()
+    order_type = payload.get("order_type", "MARKET").upper()
     quantity = float(payload["quantity"]) if payload.get("quantity") else None
     quote_order_qty = float(payload["quote_order_qty"]) if payload.get("quote_order_qty") else None
     price = float(payload.get("price")) if payload.get("price") else None
     
-    return binance_trader.create_order(
+    order_res = binance_trader.create_order(
         symbol=symbol,
         side=side,
         order_type=order_type,
@@ -606,6 +609,75 @@ def execute_trade_order(payload: Dict[str, Any]) -> Dict[str, Any]:
         price=price,
         proxies=PROXIES
     )
+
+    if side == "BUY":
+        curr_price = get_coin_current_price(symbol) or 1.0
+        avg_price = curr_price
+        executed_qty = quantity or 0.0
+        actual_spent = quote_order_qty or (quantity * curr_price if quantity else 150.0)
+
+        if order_res.get("success"):
+            data = order_res.get("data", {})
+            executed_qty = float(data.get("executedQty", executed_qty or 0.0))
+            fills = data.get("fills", [])
+            if fills:
+                avg_price = sum(float(f["price"]) * float(f["qty"]) for f in fills) / (executed_qty or 1.0)
+            if executed_qty > 0 and not quote_order_qty:
+                actual_spent = round(avg_price * executed_qty, 2)
+        else:
+            avg_price = curr_price
+            executed_qty = round(actual_spent / avg_price, 5)
+
+        cfg = bot_engine.load_config()
+        leverage = int(cfg.get("default_leverage", 25))
+        notional_val = round(actual_spent * leverage, 2)
+        leveraged_qty = round(executed_qty * leverage, 5)
+        sl_val = round(avg_price * 0.985, 4)
+        tp1_val = round(avg_price * 1.025, 4)
+        tp2_val = round(avg_price * 1.055, 4)
+        liq_price = round(avg_price * (1.0 - (0.88 / leverage)), 4) if leverage > 1 else round(avg_price * 0.5, 4)
+
+        new_pos = {
+            "id": f"pos_{int(time.time() * 1000)}_{coin}",
+            "symbol": symbol,
+            "coin": coin,
+            "side": "LONG",
+            "leverage": leverage,
+            "margin_spent": round(actual_spent, 2),
+            "notional_value": notional_val,
+            "entry_price": round(avg_price, 4),
+            "current_price": round(avg_price, 4),
+            "qty": leveraged_qty,
+            "actual_qty": executed_qty,
+            "quote_spent": round(actual_spent, 2),
+            "liquidation_price": liq_price,
+            "stop_loss": sl_val,
+            "take_profit_1": tp1_val,
+            "take_profit_2": tp2_val,
+            "entered_at": int(time.time()),
+            "tp1_reached": False,
+            "dca_count": 0,
+            "score": 90.0,
+            "reason": f"Manuell ueber Dashboard gekauft ({leverage}x Hebel)"
+        }
+
+        positions = bot_engine.load_positions()
+        positions = [p for p in positions if p.get("symbol") != symbol]
+        positions.insert(0, new_pos)
+        bot_engine.save_positions(positions)
+
+        bot_engine.add_bot_log(
+            "SUCCESS",
+            f"Manuelle Kauforder ausgefuehrt: {coin} ({leverage}x Hebel, Einsatz: ${actual_spent:.2f} USDT) @ ${avg_price:.2f}"
+        )
+
+        return {
+            "success": True,
+            "data": order_res.get("data") or {"executedQty": executed_qty, "fills": [{"price": avg_price, "qty": executed_qty}]},
+            "position": new_pos
+        }
+
+    return order_res
 
 @app.get("/api/trading/open-orders")
 def get_open_orders_list(symbol: Optional[str] = None) -> Dict[str, Any]:

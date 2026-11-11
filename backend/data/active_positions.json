@@ -1,5 +1,28 @@
 [
   {
+    "id": "pos_1794395922071_SOL",
+    "symbol": "SOLUSDT",
+    "coin": "SOL",
+    "side": "LONG",
+    "leverage": 25,
+    "margin_spent": 150.0,
+    "notional_value": 3750.0,
+    "entry_price": 83.86,
+    "current_price": 83.86,
+    "qty": 44.7,
+    "actual_qty": 1.788,
+    "quote_spent": 150.0,
+    "liquidation_price": 80.9081,
+    "stop_loss": 82.6021,
+    "take_profit_1": 85.9565,
+    "take_profit_2": 88.4723,
+    "entered_at": 1794395922,
+    "tp1_reached": false,
+    "dca_count": 0,
+    "score": 90.0,
+    "reason": "Manuell ueber Dashboard gekauft (25x Hebel)"
+  },
+  {
     "id": "pos_btc_binance_live",
     "symbol": "BTCUSDT",
     "coin": "BTC",
@@ -8,7 +31,7 @@
     "margin_spent": 150.0,
     "notional_value": 7500.0,
     "entry_price": 73098.81,
-    "current_price": 74054.15,
+    "current_price": 74036.0,
     "qty": 0.1026,
     "actual_qty": 0.00342,
     "quote_spent": 150.0,
@@ -20,8 +43,8 @@
     "dca_count": 0,
     "score": 98.0,
     "reason": "Binance Live Position: BTC Pullback Support Reversal (50x Hebel)",
-    "unrealized_roi_pct": 65.35,
-    "unrealized_pnl_usdt": 98.02,
+    "unrealized_roi_pct": 64.1,
+    "unrealized_pnl_usdt": 96.16,
     "peak_price": 74054.15
   },
   {
@@ -33,7 +56,7 @@
     "margin_spent": 149.94,
     "notional_value": 2998.8,
     "entry_price": 10.256,
-    "current_price": 10.338,
+    "current_price": 10.385,
     "qty": 292.39,
     "actual_qty": 14.62,
     "quote_spent": 149.94,
@@ -45,8 +68,8 @@
     "dca_count": 0,
     "score": 96.0,
     "reason": "Binance Live Position: LINK Dip-Kauf an Trendline (20x Hebel)",
-    "unrealized_roi_pct": 15.99,
-    "unrealized_pnl_usdt": 23.98,
-    "peak_price": 10.338
+    "unrealized_roi_pct": 25.16,
+    "unrealized_pnl_usdt": 37.72,
+    "peak_price": 10.385
   }
 ]

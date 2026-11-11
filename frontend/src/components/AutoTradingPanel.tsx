@@ -114,8 +114,8 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
         price: limitPrice
       });
 
-      if (res.success && res.data) {
-        const orderData = res.data;
+      if (res && res.success) {
+        const orderData = res.data || {};
         const executedQty = parseFloat(orderData.executedQty || '0');
         const fills = orderData.fills || [];
         const avgPrice = fills.length > 0
@@ -123,9 +123,21 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
           : currentPrice;
 
         setMessage({
-          text: `✓ Order erfolgreich ausgeführt! ${side === 'BUY' ? 'Gekauft' : 'Verkauft'}: ${coin} über ${orderSizeUsdt} USDT (Kurs: $${formatPrice(avgPrice)})`,
+          text: `✓ Kauforder erfolgreich ausgeführt! ${coin} über ${orderSizeUsdt} USDT (Kurs: $${formatPrice(avgPrice)})`,
           type: 'success'
         });
+
+        if (res.position) {
+          setLocalServerBot((prev) => {
+            if (!prev) return prev;
+            const updated = [res.position, ...(prev.open_positions || []).filter((p) => p.symbol !== res.position.symbol)];
+            return {
+              ...prev,
+              open_positions: updated,
+              open_positions_count: updated.length
+            };
+          });
+        }
         refreshAll();
       } else {
         setMessage({

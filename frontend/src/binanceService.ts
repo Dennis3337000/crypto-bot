@@ -680,7 +680,7 @@ export async function executeOrder(payload: {
       quantity: payload.quantity,
       price: payload.price
     })
-  });
+  }, 25000);
   if (!res.ok) {
     throw new Error(`Fehler bei Orderausfuehrung (${res.status})`);
   }
