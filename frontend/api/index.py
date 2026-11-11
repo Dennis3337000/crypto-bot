@@ -4,9 +4,10 @@ import json
 import time
 import urllib.parse
 import threading
+import secrets
 from typing import Dict, Any, List, Optional
 import requests
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
 
 app = FastAPI(
@@ -694,14 +695,73 @@ def startup_event():
             proxies=PROXIES
         )
 
+ACTIVE_TOKENS: Dict[str, float] = {}
+
+def get_auth_credentials() -> Dict[str, str]:
+    """Ermittelt Benutzername und Passwort aus .env oder Umgebungsvariablen."""
+    cfg = binance_trader.get_env_config()
+    username = os.environ.get("AUTH_USERNAME") or cfg.get("AUTH_USERNAME", "admin")
+    password = os.environ.get("AUTH_PASSWORD") or cfg.get("AUTH_PASSWORD", "admin123")
+    return {"username": username, "password": password}
+
+def create_session_token() -> str:
+    token = secrets.token_hex(24)
+    ACTIVE_TOKENS[token] = time.time() + (30 * 86400)  # 30 Tage gueltig
+    return token
+
+def is_token_valid(token: Optional[str]) -> bool:
+    if not token:
+        return False
+    clean = token.replace("Bearer ", "").strip()
+    if clean in ACTIVE_TOKENS:
+        if time.time() < ACTIVE_TOKENS[clean]:
+            return True
+        else:
+            ACTIVE_TOKENS.pop(clean, None)
+    return False
+
+def verify_auth_header(request: Request):
+    auth_header = request.headers.get("Authorization") or request.headers.get("X-Auth-Token")
+    if not is_token_valid(auth_header):
+        raise HTTPException(status_code=401, detail="Nicht autorisiert. Bitte im Dashboard einloggen.")
+
+@app.post("/api/auth/login")
+def login_api(payload: Dict[str, Any]) -> Dict[str, Any]:
+    """Prueft Login-Daten und gibt ein gueltiges Session-Token zurueck."""
+    creds = get_auth_credentials()
+    user = payload.get("username", "").strip()
+    pwd = payload.get("password", "").strip()
+    if user == creds["username"] and pwd == creds["password"]:
+        token = create_session_token()
+        return {"success": True, "token": token, "username": user}
+    raise HTTPException(status_code=401, detail="Ungültiger Benutzername oder Passwort.")
+
+@app.get("/api/auth/verify")
+def verify_api(request: Request) -> Dict[str, Any]:
+    """Prueft ob das uebergebene Session-Token noch gueltig ist."""
+    auth_header = request.headers.get("Authorization") or request.headers.get("X-Auth-Token")
+    if is_token_valid(auth_header):
+        return {"authenticated": True, "username": get_auth_credentials()["username"]}
+    return {"authenticated": False}
+
+@app.post("/api/auth/logout")
+def logout_api(request: Request) -> Dict[str, Any]:
+    """Loggt den aktuellen Benutzer aus und entwertet das Token."""
+    auth_header = request.headers.get("Authorization") or request.headers.get("X-Auth-Token")
+    if auth_header:
+        clean = auth_header.replace("Bearer ", "").strip()
+        ACTIVE_TOKENS.pop(clean, None)
+    return {"success": True}
+
 @app.get("/api/bot/status")
 def get_bot_status_api() -> Dict[str, Any]:
     """Liefert den 24/7 Bot-Status mit aktuellen Live-Preisen aller Positionen."""
     return bot_engine.get_bot_status(price_provider_func=get_coin_current_price)
 
 @app.post("/api/bot/toggle")
-def toggle_bot_api(payload: Dict[str, Any]) -> Dict[str, Any]:
+def toggle_bot_api(payload: Dict[str, Any], request: Request) -> Dict[str, Any]:
     """Schaltet den 24/7 Autopiloten an oder aus."""
+    verify_auth_header(request)
     enable = payload.get("enabled", True)
     cfg = bot_engine.load_config()
     cfg["enabled"] = enable
@@ -720,8 +780,9 @@ def toggle_bot_api(payload: Dict[str, Any]) -> Dict[str, Any]:
     return bot_engine.get_bot_status()
 
 @app.post("/api/bot/config")
-def update_bot_config_api(payload: Dict[str, Any]) -> Dict[str, Any]:
+def update_bot_config_api(payload: Dict[str, Any], request: Request) -> Dict[str, Any]:
     """Aktualisiert Bot-Parameter (z.B. Order-Groesse, Min-Score)."""
+    verify_auth_header(request)
     cfg = bot_engine.load_config()
     for k, v in payload.items():
         cfg[k] = v
@@ -729,8 +790,9 @@ def update_bot_config_api(payload: Dict[str, Any]) -> Dict[str, Any]:
     return {"success": True, "config": cfg}
 
 @app.post("/api/bot/close-position")
-def close_bot_position_api(payload: Dict[str, Any]) -> Dict[str, Any]:
+def close_bot_position_api(payload: Dict[str, Any], request: Request) -> Dict[str, Any]:
     """Schliesst eine aktive Position manuell ueber das Dashboard."""
+    verify_auth_header(request)
     pos_id = payload.get("position_id", "")
     reason = payload.get("reason", "Manuell ueber Dashboard geschlossen")
     return bot_engine.close_active_position(pos_id, reason, proxies=PROXIES)

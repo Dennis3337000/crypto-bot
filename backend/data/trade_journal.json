@@ -1,5 +1,23 @@
 [
   {
+    "id": "pos_1794325436250_ETH",
+    "symbol": "ETHUSDT",
+    "coin": "ETH",
+    "side": "LONG",
+    "leverage": 50,
+    "margin_spent": 149.97,
+    "entry_price": 2015.71,
+    "exit_price": 2067.56,
+    "qty": 0.0,
+    "quote_spent": 149.97,
+    "quote_received": 342.85,
+    "pnl_usdt": 192.88,
+    "roi_pct": 128.61,
+    "entered_at": 1794325436,
+    "closed_at": 1794386585,
+    "exit_reason": "Manuell ueber Dashboard geschlossen (50x Hebel)"
+  },
+  {
     "id": "pos_1794324541751_BNB",
     "symbol": "BNBUSDT",
     "coin": "BNB",

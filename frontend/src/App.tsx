@@ -4,9 +4,13 @@ import { TopBuyBanner } from './components/TopBuyBanner';
 import { PriceChart } from './components/PriceChart';
 import { AutoTradingPanel } from './components/AutoTradingPanel';
 import { TopPortfolioBar } from './components/TopPortfolioBar';
-import { getCoins, getMarketData, getTradingAnalysis, getBestPick, getServerBotStatus, getLivePrices } from './binanceService';
+import { LoginModal } from './components/LoginModal';
+import { getCoins, getMarketData, getTradingAnalysis, getBestPick, getServerBotStatus, getLivePrices, getAuthToken, verifyAuth, logoutUser } from './binanceService';
 
 export const App: React.FC = () => {
+  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
+    return Boolean(getAuthToken());
+  });
   const [coins, setCoins] = useState<CoinItem[]>([]);
   const [selectedSymbol, setSelectedSymbol] = useState<string>('BTCUSDT');
   const [marketData, setMarketData] = useState<MarketData | null>(null);
@@ -26,6 +30,13 @@ export const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [autoRefresh, setAutoRefresh] = useState<boolean>(true);
+
+  // Authentifizierung beim Start validieren
+  useEffect(() => {
+    verifyAuth().then((valid) => {
+      setIsAuthenticated(valid);
+    });
+  }, []);
 
   // Coins List laden
   useEffect(() => {
@@ -198,6 +209,10 @@ export const App: React.FC = () => {
     category: 'Crypto Asset'
   };
 
+  if (!isAuthenticated) {
+    return <LoginModal onLoginSuccess={() => setIsAuthenticated(true)} />;
+  }
+
   return (
     <div className="app-container">
       {/* Top Header */}
@@ -224,6 +239,18 @@ export const App: React.FC = () => {
             title="Automatisches Neuladen alle 10s an/aus"
           >
             {autoRefresh ? '⚡ Auto-Sync: An' : '⏸ Auto-Sync: Pause'}
+          </button>
+
+          <button
+            onClick={async () => {
+              await logoutUser();
+              setIsAuthenticated(false);
+            }}
+            className="chip-btn"
+            title="Terminal sperren / Abmelden"
+            style={{ borderColor: 'rgba(255, 56, 96, 0.4)', color: 'var(--color-red)' }}
+          >
+            🔒 Abmelden
           </button>
         </div>
       </header>

@@ -19,9 +19,27 @@ const BINANCE_BASE = 'https://api.binance.com/api/v3';
 const CACHE = new Map<string, { timestamp: number; data: any }>();
 const CACHE_TTL = 8000; // 8 Sekunden Cache
 
+export function getAuthToken(): string | null {
+  if (typeof window === 'undefined') return null;
+  return localStorage.getItem('crypto_auth_token');
+}
+
+export function setAuthToken(token: string | null) {
+  if (typeof window === 'undefined') return;
+  if (token) localStorage.setItem('crypto_auth_token', token);
+  else localStorage.removeItem('crypto_auth_token');
+}
+
 async function apiFetch(endpoint: string, init?: RequestInit): Promise<Response> {
+  const token = getAuthToken();
+  const headers = new Headers(init?.headers || {});
+  if (token && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${token}`);
+  }
+  const customInit = { ...init, headers };
+
   try {
-    const res = await fetch(endpoint, init);
+    const res = await fetch(endpoint, customInit);
     return res;
   } catch (err) {
     if (
@@ -30,11 +48,49 @@ async function apiFetch(endpoint: string, init?: RequestInit): Promise<Response>
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ) {
       try {
-        return await fetch(`http://127.0.0.1:8001${endpoint}`, init);
+        return await fetch(`http://127.0.0.1:8001${endpoint}`, customInit);
       } catch {}
     }
     throw err;
   }
+}
+
+export async function loginUser(username: string, password: string): Promise<{ success: boolean; token?: string; error?: string }> {
+  try {
+    const res = await apiFetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
+    });
+    const data = await res.json();
+    if (res.ok && data.success && data.token) {
+      setAuthToken(data.token);
+      return { success: true, token: data.token };
+    }
+    return { success: false, error: data.detail || data.error || 'Ungültige Anmeldedaten.' };
+  } catch (e: any) {
+    return { success: false, error: e.message || 'Verbindungsfehler zum Server.' };
+  }
+}
+
+export async function verifyAuth(): Promise<boolean> {
+  const token = getAuthToken();
+  if (!token) return false;
+  try {
+    const res = await apiFetch('/api/auth/verify');
+    if (!res.ok) return false;
+    const data = await res.json();
+    return Boolean(data.authenticated);
+  } catch {
+    return false;
+  }
+}
+
+export async function logoutUser(): Promise<void> {
+  try {
+    await apiFetch('/api/auth/logout', { method: 'POST' });
+  } catch {}
+  setAuthToken(null);
 }
 
 async function binanceGet(endpoint: string, params: Record<string, string | number> = {}): Promise<any> {
