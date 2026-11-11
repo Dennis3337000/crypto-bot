@@ -133,6 +133,7 @@ BOT_RUNNING = False
 LAST_SCAN_TIME = 0
 BOT_LOGS: List[Dict[str, Any]] = []
 CACHED_USDT_FREE: float = 9985.05
+FAILED_SYMBOLS_COOLDOWN: Dict[str, float] = {}
 
 def update_cached_usdt(val: float):
     global CACHED_USDT_FREE
@@ -554,8 +555,16 @@ def scan_and_open_new_trades(analysis_func, best_pick_func, proxies: Optional[Di
             # 1. Pruefen ob der Coin bereits offen ist
             if any(p["symbol"] == sym for p in positions):
                 continue
+
+            # 2. Pruefen ob der Coin temporaer wegen Order-Fehler (z.B. fehlende Testnet-Liquiditaet) pausiert ist
+            if FAILED_SYMBOLS_COOLDOWN.get(sym, 0) > now:
+                continue
+
+            # PEPEUSDT im Binance Testnet ueberspringen (hat im Testnet keine Asks im Orderbuch)
+            if sym == "PEPEUSDT" and "testnet" in binance_trader.TESTNET_BASE_URL:
+                continue
                 
-            # 2. Cooldown pruefen
+            # 3. Cooldown pruefen
             recent_trade = next((t for t in journal if t["symbol"] == sym and (now - t.get("closed_at", 0)) < cooldown_sec), None)
             if recent_trade:
                 continue
@@ -646,7 +655,9 @@ def scan_and_open_new_trades(analysis_func, best_pick_func, proxies: Optional[Di
                         f"24/7 Bot hat Position eroeffnet: {coin} ({leverage}x Hebel, Kaufkraft: ${notional_val:.2f}, Margin: ${actual_spent:.2f}) @ ${avg_price:.2f} (SL: ${sl_val:.2f}, TP2: ${tp2_val:.2f})"
                     )
                 else:
-                    add_bot_log("ERROR", f"Kauf fuer {sym} fehlgeschlagen: {order_res.get('error')}")
+                    err_msg = order_res.get('error', 'Unbekannter Fehler')
+                    FAILED_SYMBOLS_COOLDOWN[sym] = now + 600  # 10 Min Cooldown
+                    add_bot_log("WARNING", f"Kauf fuer {sym} fehlgeschlagen ({err_msg}) - Coin temporaer pausiert, scanne alternative Coins...")
                     
         if opened_this_cycle > 0:
             add_bot_log("INFO", f"Zyklus abgeschlossen: {opened_this_cycle} Positionen parallel geoeffnet.")
