@@ -68,10 +68,14 @@ def calculate_ai_leverage(score: float, sl_pct: float, cfg: Dict[str, Any]) -> i
 DATA_LOCK = threading.RLock()
 
 def _atomic_write_json(file_path: str, data: Any):
-    tmp_path = f"{file_path}.tmp"
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2)
-    os.replace(tmp_path, file_path)
+    try:
+        tmp_path = f"{file_path}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
+        os.replace(tmp_path, file_path)
+    except Exception:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2)
 
 def load_config() -> Dict[str, Any]:
     ensure_data_files()
