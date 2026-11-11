@@ -571,13 +571,28 @@ def scan_and_open_new_trades(analysis_func, best_pick_func, proxies: Optional[Di
                 
             # 3. 100% SICHERHEITS-FILTER (A+ Setup Kriterien fuer maximale Trefferquote):
             cand_rsi = float(candidate.get("rsi_15m", 50.0))
-            is_valid_entry = (
+            cand_sig_label = str(candidate.get("signal_label", "")).upper()
+            
+            # Setup-Typ A: Dip-Reversal & Akkumulation (Boden-Kauf)
+            is_dip_entry = (
                 score >= min_score and
                 signal == "BUY" and
-                range_pos <= 28.0 and
-                dist_buy <= 0.8 and
-                cand_rsi <= 42.0
+                range_pos <= 35.0 and
+                dist_buy <= 1.2 and
+                cand_rsi <= 46.0
             )
+            
+            # Setup-Typ B: Breakout-Momentum (Dynamischer Ausbruch ueber Widerstand)
+            is_breakout_entry = (
+                score >= min_score and
+                signal == "BUY" and
+                "BREAKOUT" in cand_sig_label and
+                cand_rsi >= 52.0 and
+                cand_rsi <= 75.0 and
+                range_pos >= 60.0
+            )
+            
+            is_valid_entry = is_dip_entry or is_breakout_entry
             
             if is_valid_entry:
                 add_bot_log("INFO", f"100% A+ Setup gefunden: {coin} (Score: {score}, Signal: {candidate.get('signal_label')}, Range: {range_pos}%, RSI: {cand_rsi})")
