@@ -194,6 +194,7 @@ export interface ActivePosition {
   last_dca_time?: number;
   unrealized_pnl_usdt?: number;
   unrealized_roi_pct?: number;
+  peak_price?: number;
   score: number;
   reason: string;
 }

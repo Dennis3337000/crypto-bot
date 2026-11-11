@@ -19,7 +19,7 @@ export const TopPortfolioBar: React.FC<TopPortfolioBarProps> = ({
   
   const usdtFree = serverBot?.usdt_free ?? 9985.05;
   const positionsValue = serverBot?.positions_value_usdt ?? 0;
-  const totalCapital = serverBot?.total_capital_usdt ?? (usdtFree + positionsValue);
+  const totalCapital = serverBot?.total_capital_usdt ?? (usdtFree + totalPnl);
   const capitalGrowth = serverBot?.capital_growth_pct ?? 0;
 
   const totalFloatingPnl = openPositions.reduce(
@@ -132,13 +132,14 @@ export const TopPortfolioBar: React.FC<TopPortfolioBarProps> = ({
             <span className="kpi-currency">USDT</span>
           </div>
           <div className="kpi-sub-hint">
-            Freies Testnet-Guthaben + aktueller Positionswert
+            Freies Restguthaben + bisher vom Bot verdient
           </div>
         </div>
 
         <div className="kpi-card-footer">
-          <span>Verfügbar: <strong>${usdtFree.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
-          <span>• Gebunden: <strong>${positionsValue.toFixed(2)}</strong></span>
+          <span>Verfügbar (übrig): <strong>${usdtFree.toLocaleString('de-DE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></span>
+          <span>• Vom Bot verdient: <strong className={totalPnl >= 0 ? 'text-green' : 'text-red'}>{totalPnl >= 0 ? '+' : ''}${totalPnl.toFixed(2)} USDT</strong></span>
+          {positionsValue > 0 && <span> • In Trades: <strong>${positionsValue.toFixed(2)}</strong></span>}
         </div>
       </div>
     </div>

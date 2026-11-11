@@ -42,8 +42,11 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
   const serverBot = propServerBot || localServerBot;
 
   useEffect(() => {
-    if (propServerBot?.config?.order_size_usdt) {
-      setOrderSizeUsdt(propServerBot.config.order_size_usdt);
+    if (propServerBot) {
+      setLocalServerBot(propServerBot);
+      if (propServerBot.config?.order_size_usdt) {
+        setOrderSizeUsdt(propServerBot.config.order_size_usdt);
+      }
     }
   }, [propServerBot]);
 
@@ -430,7 +433,7 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
                       </div>
                       <div>
                         <span className="pos-dim">Aktueller Kurs:</span>
-                        <strong>${formatPrice(pos.current_price || currentPrice)}</strong>
+                        <strong>${formatPrice(pos.current_price || pos.entry_price)}</strong>
                       </div>
                       <div>
                         <span className="pos-dim">Margin (Einsatz):</span>

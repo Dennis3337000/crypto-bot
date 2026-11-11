@@ -8,7 +8,7 @@
     "margin_spent": 149.78,
     "notional_value": 748.88,
     "entry_price": 687.05,
-    "current_price": 676.81,
+    "current_price": 680.11,
     "qty": 1.09,
     "quote_spent": 149.78,
     "liquidation_price": 566.1292,
@@ -20,8 +20,8 @@
     "dca_count": 0,
     "score": 58.0,
     "reason": "KI-Autopilot: LIMIT-KAUF VORBEREITEN (5x Hebel, Score: 58.0)",
-    "unrealized_roi_pct": -7.45,
-    "unrealized_pnl_usdt": -11.16
+    "unrealized_roi_pct": -5.05,
+    "unrealized_pnl_usdt": -7.56
   },
   {
     "id": "pos_1794325216293_BTC",
@@ -32,7 +32,7 @@
     "margin_spent": 149.51,
     "notional_value": 7475.74,
     "entry_price": 73291.6,
-    "current_price": 73234.01,
+    "current_price": 73870.48,
     "qty": 0.102,
     "quote_spent": 149.51,
     "liquidation_price": 72001.6678,
@@ -44,9 +44,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": -3.93,
-    "unrealized_pnl_usdt": -5.87,
-    "peak_price": 73358.21
+    "unrealized_roi_pct": 39.49,
+    "unrealized_pnl_usdt": 59.04,
+    "peak_price": 73870.48
   },
   {
     "id": "pos_1794325308368_DOGE",
@@ -57,7 +57,7 @@
     "margin_spent": 149.98,
     "notional_value": 7499.21,
     "entry_price": 0.0675,
-    "current_price": 0.06762,
+    "current_price": 0.06788,
     "qty": 111050.0,
     "quote_spent": 149.98,
     "liquidation_price": 0.0663,
@@ -69,8 +69,8 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 8.89,
-    "unrealized_pnl_usdt": 13.33,
+    "unrealized_roi_pct": 28.15,
+    "unrealized_pnl_usdt": 42.22,
     "peak_price": 0.06792
   },
   {
@@ -82,7 +82,7 @@
     "margin_spent": 149.99,
     "notional_value": 7499.4,
     "entry_price": 0.1724,
-    "current_price": 0.1731,
+    "current_price": 0.1746,
     "qty": 43500.0,
     "quote_spent": 149.99,
     "liquidation_price": 0.1694,
@@ -94,9 +94,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 20.3,
-    "unrealized_pnl_usdt": 30.45,
-    "peak_price": 0.1738
+    "unrealized_roi_pct": 63.81,
+    "unrealized_pnl_usdt": 95.7,
+    "peak_price": 0.1746
   },
   {
     "id": "pos_1794325436250_ETH",
@@ -107,7 +107,7 @@
     "margin_spent": 149.97,
     "notional_value": 7498.44,
     "entry_price": 2015.71,
-    "current_price": 2026.97,
+    "current_price": 2063.16,
     "qty": 3.72,
     "quote_spent": 149.97,
     "liquidation_price": 1980.2335,
@@ -119,9 +119,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 27.93,
-    "unrealized_pnl_usdt": 41.89,
-    "peak_price": 2032.85
+    "unrealized_roi_pct": 117.7,
+    "unrealized_pnl_usdt": 176.52,
+    "peak_price": 2063.16
   },
   {
     "id": "pos_1794325437329_AVAX",
@@ -132,7 +132,7 @@
     "margin_spent": 149.97,
     "notional_value": 7498.63,
     "entry_price": 8.133,
-    "current_price": 8.208,
+    "current_price": 8.502,
     "qty": 922.0,
     "quote_spent": 149.97,
     "liquidation_price": 7.9899,
@@ -144,9 +144,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 46.11,
-    "unrealized_pnl_usdt": 69.15,
-    "peak_price": 8.241
+    "unrealized_roi_pct": 226.85,
+    "unrealized_pnl_usdt": 340.21,
+    "peak_price": 8.502
   },
   {
     "id": "pos_1794325507931_SOL",
@@ -157,7 +157,7 @@
     "margin_spent": 149.95,
     "notional_value": 7497.31,
     "entry_price": 81.67,
-    "current_price": 82.11,
+    "current_price": 82.92,
     "qty": 91.8,
     "quote_spent": 149.95,
     "liquidation_price": 80.2326,
@@ -169,9 +169,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 26.94,
-    "unrealized_pnl_usdt": 40.39,
-    "peak_price": 82.59
+    "unrealized_roi_pct": 76.53,
+    "unrealized_pnl_usdt": 114.75,
+    "peak_price": 82.92
   },
   {
     "id": "pos_1794325511157_SUI",
@@ -182,7 +182,7 @@
     "margin_spent": 149.99,
     "notional_value": 7499.51,
     "entry_price": 0.8051,
-    "current_price": 0.8133,
+    "current_price": 0.8229,
     "qty": 9315.0,
     "quote_spent": 149.99,
     "liquidation_price": 0.7909,
@@ -194,9 +194,9 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 50.93,
-    "unrealized_pnl_usdt": 76.38,
-    "peak_price": 0.8175
+    "unrealized_roi_pct": 110.55,
+    "unrealized_pnl_usdt": 165.81,
+    "peak_price": 0.8229
   },
   {
     "id": "pos_1794325577221_XRP",
@@ -207,7 +207,7 @@
     "margin_spent": 149.94,
     "notional_value": 7497.11,
     "entry_price": 1.0391,
-    "current_price": 1.0411,
+    "current_price": 1.0601,
     "qty": 7215.0,
     "quote_spent": 149.94,
     "liquidation_price": 1.0208,
@@ -219,8 +219,34 @@
     "dca_count": 0,
     "score": 99.0,
     "reason": "KI-Autopilot: KAUFEN (DIP-REVERSAL) (50x Hebel, Score: 99.0)",
-    "unrealized_roi_pct": 9.62,
-    "unrealized_pnl_usdt": 14.43,
-    "peak_price": 1.0459
+    "unrealized_roi_pct": 101.05,
+    "unrealized_pnl_usdt": 151.51,
+    "peak_price": 1.0601
+  },
+  {
+    "id": "pos_1794326843335_NEAR",
+    "symbol": "NEARUSDT",
+    "coin": "NEAR",
+    "side": "LONG",
+    "leverage": 30,
+    "margin_spent": 149.83,
+    "notional_value": 4495.02,
+    "entry_price": 3.559,
+    "current_price": 3.612,
+    "qty": 1263.0,
+    "actual_qty": 42.1,
+    "quote_spent": 149.83,
+    "liquidation_price": 3.4546,
+    "stop_loss": 3.467,
+    "take_profit_1": 3.645,
+    "take_profit_2": 3.746,
+    "entered_at": 1794326843,
+    "tp1_reached": false,
+    "dca_count": 0,
+    "score": 99.0,
+    "reason": "100% A+ Setup: KAUFEN (DIP-REVERSAL) (30x Hebel, Score: 99.0)",
+    "unrealized_roi_pct": 44.68,
+    "unrealized_pnl_usdt": 66.94,
+    "peak_price": 3.612
   }
 ]

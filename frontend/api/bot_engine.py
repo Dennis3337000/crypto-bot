@@ -65,47 +65,63 @@ def calculate_ai_leverage(score: float, sl_pct: float, cfg: Dict[str, Any]) -> i
         
     return max(1, min(max_lev, lev))
 
+DATA_LOCK = threading.Lock()
+
+def _atomic_write_json(file_path: str, data: Any):
+    tmp_path = f"{file_path}.tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2)
+    os.replace(tmp_path, file_path)
+
 def load_config() -> Dict[str, Any]:
     ensure_data_files()
-    try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {"enabled": True, "order_size_usdt": 50.0, "min_score": 80.0}
+    with DATA_LOCK:
+        try:
+            with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {"enabled": True, "order_size_usdt": 50.0, "min_score": 80.0}
 
 def save_config(cfg: Dict[str, Any]):
     ensure_data_files()
-    with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2)
+    with DATA_LOCK:
+        _atomic_write_json(CONFIG_FILE, cfg)
 
 def load_positions() -> List[Dict[str, Any]]:
     ensure_data_files()
-    try:
-        with open(POSITIONS_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return []
+    with DATA_LOCK:
+        try:
+            with open(POSITIONS_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
 
 def save_positions(positions: List[Dict[str, Any]]):
     ensure_data_files()
-    with open(POSITIONS_FILE, "w", encoding="utf-8") as f:
-        json.dump(positions, f, indent=2)
+    with DATA_LOCK:
+        _atomic_write_json(POSITIONS_FILE, positions)
 
 def load_journal() -> List[Dict[str, Any]]:
     ensure_data_files()
-    try:
-        with open(JOURNAL_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return []
+    with DATA_LOCK:
+        try:
+            with open(JOURNAL_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
 
 def append_to_journal(trade: Dict[str, Any]):
     ensure_data_files()
-    journal = load_journal()
-    journal.insert(0, trade)
-    # Begrenze Journal auf letzte 200 Eintraege
-    with open(JOURNAL_FILE, "w", encoding="utf-8") as f:
-        json.dump(journal[:200], f, indent=2)
+    with DATA_LOCK:
+        journal = []
+        try:
+            with open(JOURNAL_FILE, "r", encoding="utf-8") as f:
+                journal = json.load(f)
+        except Exception:
+            journal = []
+        journal.insert(0, trade)
+        # Begrenze Journal auf letzte 200 Eintraege
+        _atomic_write_json(JOURNAL_FILE, journal[:200])
 
 # Globaler Zustand des Hintergrund-Workers
 BOT_THREAD: Optional[threading.Thread] = None
@@ -131,11 +147,34 @@ def add_bot_log(level: str, message: str, details: Optional[Dict[str, Any]] = No
     if len(BOT_LOGS) > 100:
         BOT_LOGS.pop()
 
-def get_bot_status() -> Dict[str, Any]:
-    """Liefert den Bot-Status augenblicklich aus dem Speicher (0ms Latenz, keine Netzwerkblockade)."""
+def get_bot_status(price_provider_func=None) -> Dict[str, Any]:
+    """Liefert den Bot-Status inklusive Live-Aktualisierung offener Positionen und bereinigtem Gesamtkapital."""
     cfg = load_config()
     positions = load_positions()
     journal = load_journal()
+
+    # Offene Positionen mit frischen Kursen anreichern falls price_provider uebergeben
+    if price_provider_func and positions:
+        updated = False
+        for pos in positions:
+            sym = pos.get("symbol")
+            if not sym:
+                continue
+            curr_price = price_provider_func(sym)
+            if curr_price and curr_price > 0:
+                pos["current_price"] = curr_price
+                entry_price = float(pos.get("entry_price", curr_price))
+                leverage = int(pos.get("leverage", 1))
+                margin_spent = float(pos.get("margin_spent", pos.get("quote_spent", 50.0)))
+                base_roi = (curr_price - entry_price) / entry_price if entry_price > 0 else 0.0
+                pos["unrealized_roi_pct"] = round(base_roi * 100 * leverage, 2)
+                pos["unrealized_pnl_usdt"] = round(margin_spent * base_roi * leverage, 2)
+                peak_price = float(pos.get("peak_price", entry_price))
+                if curr_price > peak_price:
+                    pos["peak_price"] = curr_price
+                updated = True
+        if updated:
+            save_positions(positions)
     
     # Berechne Performance-Kennzahlen aus Journal
     total_trades = len(journal)
@@ -144,15 +183,16 @@ def get_bot_status() -> Dict[str, Any]:
     total_pnl = sum(t.get("pnl_usdt", 0) for t in journal)
     win_rate = round((len(wins) / total_trades * 100), 1) if total_trades > 0 else 0.0
     
-    # Berechne Kapital und Portfoliowerte (Equity = Freies Guthaben + Margin + Floating PnL)
+    # Berechne Kapital und Portfoliowerte
     total_margin_spent = sum(float(p.get("margin_spent", p.get("quote_spent", 0.0))) for p in positions)
     total_unrealized_pnl = sum(float(p.get("unrealized_pnl_usdt", 0.0)) for p in positions)
     positions_value = round(total_margin_spent + total_unrealized_pnl, 2)
     
     usdt_free = CACHED_USDT_FREE
-    total_capital = round(usdt_free + positions_value, 2)
-    initial_capital = 10000.0
-    capital_growth_pct = round(((total_capital - initial_capital) / initial_capital) * 100, 2)
+    # Gesamtkapital: Nur was noch uebrig ist ("usdt_free") plus was der Bot bisher verdient hat ("total_pnl")
+    total_capital = round(usdt_free + total_pnl, 2)
+    baseline_capital = round(usdt_free - total_pnl, 2) if (usdt_free - total_pnl) > 0 else 10000.0
+    capital_growth_pct = round((total_pnl / baseline_capital) * 100, 2) if baseline_capital > 0 else 0.0
     
     return {
         "bot_active": cfg.get("enabled", True),
@@ -161,7 +201,7 @@ def get_bot_status() -> Dict[str, Any]:
         "usdt_free": round(usdt_free, 2),
         "positions_value_usdt": round(positions_value, 2),
         "total_capital_usdt": total_capital,
-        "initial_capital_usdt": initial_capital,
+        "initial_capital_usdt": baseline_capital,
         "capital_growth_pct": capital_growth_pct,
         "open_positions_count": len(positions),
         "open_positions": positions,
@@ -329,17 +369,18 @@ def check_open_positions_lifecycle(get_current_price_func, analysis_func, proxie
                 continue
                 
             # 3. DYNAMISCHER RSI-UEBERHITZUNGS-EXIT (Gewinnmitnahme am oberen Band)
-            # Wenn Position im Gewinn (ROI >= 1.0%) und RSI 15m >= 68 (Ueberhitzt):
-            try:
-                analysis = analysis_func(sym)
-                rsi_val = float(analysis.get("rsi_15m", 50.0))
-                range_p = float(analysis.get("range_position_pct", 50.0))
-                if pos["unrealized_roi_pct"] >= 1.0 and (rsi_val >= 68.0 or range_p >= 75.0):
-                    add_bot_log("SUCCESS", f"Dynamischer RSI/Widerstands-Exit fuer {coin}: RSI={rsi_val:.1f}, Range={range_p:.1f}%. Gewinn gesichert!")
-                    close_active_position(pos_id, f"RSI-Ueberhitzung / Widerstand (+{pos['unrealized_roi_pct']}%)", proxies=proxies)
-                    continue
-            except Exception:
-                pass
+            # Nur pruefen wenn Position ueberhaupt im Gewinn ist (ROI >= 1.0%), um API-Aufrufe zu sparen
+            if pos.get("unrealized_roi_pct", 0) >= 1.0:
+                try:
+                    analysis = analysis_func(sym)
+                    rsi_val = float(analysis.get("rsi_15m", 50.0))
+                    range_p = float(analysis.get("range_position_pct", 50.0))
+                    if rsi_val >= 68.0 or range_p >= 75.0:
+                        add_bot_log("SUCCESS", f"Dynamischer RSI/Widerstands-Exit fuer {coin}: RSI={rsi_val:.1f}, Range={range_p:.1f}%. Gewinn gesichert!")
+                        close_active_position(pos_id, f"RSI-Ueberhitzung / Widerstand (+{pos['unrealized_roi_pct']}%)", proxies=proxies)
+                        continue
+                except Exception:
+                    pass
                 
             # 4. TAKE-PROFIT 2 (Hauptziel erreicht -> Komplettverkauf mit maximalem Gewinn)
             if cfg.get("auto_take_profit", True) and curr_price >= tp2:

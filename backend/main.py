@@ -2,6 +2,8 @@ import os
 import sys
 import json
 import time
+import urllib.parse
+import threading
 from typing import Dict, Any, List, Optional
 import requests
 from fastapi import FastAPI, HTTPException, Query
@@ -22,7 +24,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# In-Memory Cache gegen Rate-Limits
+# In-Memory Cache gegen Rate-Limits (mit automatischer Speicherbereinigung)
 CACHE: Dict[str, Dict[str, Any]] = {}
 CACHE_TTL_SECONDS = 8
 
@@ -67,12 +69,18 @@ COINS_CATALOG = [
 ]
 
 def binance_get(endpoint: str, params: Optional[Dict[str, Any]] = None) -> Any:
-    """Fuehrt GET-Request an die Binance API aus mit Proxy und Timeout."""
+    """Fuehrt GET-Request an die Binance API aus mit Proxy, Timeout und Cache-Purge."""
     base_url = "https://api.binance.com"
     url = f"{base_url}{endpoint}"
     cache_key = f"{endpoint}?{json.dumps(params, sort_keys=True)}"
     
     now = time.time()
+    # Cache bereinigen wenn zu gross (schuetzt vor OOM auf Render)
+    if len(CACHE) > 100:
+        expired = [k for k, v in CACHE.items() if now - v.get("timestamp", 0) > CACHE_TTL_SECONDS * 2]
+        for k in expired:
+            CACHE.pop(k, None)
+
     if cache_key in CACHE:
         item = CACHE[cache_key]
         if now - item["timestamp"] < CACHE_TTL_SECONDS:
@@ -614,26 +622,48 @@ except ImportError:
 GLOBAL_PRICES_CACHE: Dict[str, float] = {}
 PRICES_CACHE_TIME: float = 0.0
 
-def get_coin_current_price(symbol: str) -> float:
+def get_relevant_symbols() -> List[str]:
+    """Ermittelt alle relevanten Symbole (Katalog + offene Positionen)."""
+    symbols = {item["symbol"] for item in COINS_CATALOG}
+    try:
+        positions = bot_engine.load_positions()
+        for p in positions:
+            if p.get("symbol"):
+                symbols.add(p["symbol"])
+    except Exception:
+        pass
+    return sorted(list(symbols))
+
+def get_relevant_prices() -> Dict[str, float]:
+    """Holt schonend und blitzschnell nur die relevanten Coin-Preise ueber Binance."""
     global GLOBAL_PRICES_CACHE, PRICES_CACHE_TIME
+    now = time.time()
+    if GLOBAL_PRICES_CACHE and (now - PRICES_CACHE_TIME < 3.0):
+        return GLOBAL_PRICES_CACHE
+
+    symbols = get_relevant_symbols()
+    try:
+        symbols_json = json.dumps(symbols)
+        url = f"https://api.binance.com/api/v3/ticker/price?symbols={urllib.parse.quote(symbols_json)}"
+        kwargs: Dict[str, Any] = {"timeout": 6}
+        if PROXIES:
+            kwargs["proxies"] = PROXIES
+        resp = requests.get(url, **kwargs)
+        if resp.status_code == 200:
+            for item in resp.json():
+                GLOBAL_PRICES_CACHE[item["symbol"]] = float(item["price"])
+            PRICES_CACHE_TIME = now
+    except Exception:
+        pass
+    return GLOBAL_PRICES_CACHE
+
+def get_coin_current_price(symbol: str) -> float:
     sym = symbol.upper().strip()
     if not sym.endswith("USDT") and not sym.endswith("BUSD"):
         sym = f"{sym}USDT"
-        
-    now = time.time()
-    # Cache alle Ticker fuer 2.5 Sekunden
-    if not GLOBAL_PRICES_CACHE or (now - PRICES_CACHE_TIME > 2.5):
-        try:
-            raw_prices = binance_get("/api/v3/ticker/price")
-            if isinstance(raw_prices, list):
-                GLOBAL_PRICES_CACHE = {item["symbol"]: float(item["price"]) for item in raw_prices}
-                PRICES_CACHE_TIME = now
-        except Exception:
-            pass
-            
-    if sym in GLOBAL_PRICES_CACHE:
-        return GLOBAL_PRICES_CACHE[sym]
-        
+    prices = get_relevant_prices()
+    if sym in prices:
+        return prices[sym]
     try:
         res = binance_get("/api/v3/ticker/price", {"symbol": sym})
         price = float(res.get("price", 0.0))
@@ -642,9 +672,35 @@ def get_coin_current_price(symbol: str) -> float:
     except Exception:
         return 0.0
 
+@app.get("/api/health")
+def health_check() -> Dict[str, Any]:
+    """Health-Check fuer Render und Uptime-Monitore."""
+    return {"status": "ok", "time": time.time()}
+
+@app.get("/api/prices")
+def get_live_prices_api() -> Dict[str, float]:
+    """Liefert alle aktuellen Live-Preise fuer offene Trades und Top-Coins."""
+    return get_relevant_prices()
+
+def run_render_keepalive():
+    """Haelt den Render Free Web Service dauerhaft wach gegen Inaktivitaets-Sleep."""
+    render_url = os.environ.get("RENDER_EXTERNAL_URL")
+    if not render_url:
+        return
+    while True:
+        try:
+            time.sleep(600)  # Alle 10 Minuten
+            ping_url = f"{render_url.rstrip('/')}/api/health"
+            requests.get(ping_url, timeout=10)
+        except Exception:
+            pass
+
 @app.on_event("startup")
 def startup_event():
     """Startet den 24/7 Autonomen Trading-Bot automatisch beim Backend-Boot."""
+    # Render Anti-Sleep Worker starten
+    threading.Thread(target=run_render_keepalive, daemon=True).start()
+
     creds = binance_trader.get_api_credentials()
     if creds["is_configured"]:
         bot_engine.start_bot_background(
@@ -656,8 +712,8 @@ def startup_event():
 
 @app.get("/api/bot/status")
 def get_bot_status_api() -> Dict[str, Any]:
-    """Liefert den 24/7 Bot-Status, aktive Positionen und Journal."""
-    return bot_engine.get_bot_status()
+    """Liefert den 24/7 Bot-Status mit aktuellen Live-Preisen aller Positionen."""
+    return bot_engine.get_bot_status(price_provider_func=get_coin_current_price)
 
 @app.post("/api/bot/toggle")
 def toggle_bot_api(payload: Dict[str, Any]) -> Dict[str, Any]:

@@ -4,7 +4,7 @@ import { TopBuyBanner } from './components/TopBuyBanner';
 import { PriceChart } from './components/PriceChart';
 import { AutoTradingPanel } from './components/AutoTradingPanel';
 import { TopPortfolioBar } from './components/TopPortfolioBar';
-import { getCoins, getMarketData, getTradingAnalysis, getBestPick, getServerBotStatus } from './binanceService';
+import { getCoins, getMarketData, getTradingAnalysis, getBestPick, getServerBotStatus, getLivePrices } from './binanceService';
 
 export const App: React.FC = () => {
   const [coins, setCoins] = useState<CoinItem[]>([]);
@@ -13,7 +13,14 @@ export const App: React.FC = () => {
   const [analysis, setAnalysis] = useState<TradingAnalysis | null>(null);
   const [bestPick, setBestPick] = useState<BestPick | null>(null);
   const [ranking, setRanking] = useState<BestPick[]>([]);
-  const [serverBot, setServerBot] = useState<ServerBotStatus | null>(null);
+  const [serverBot, setServerBot] = useState<ServerBotStatus | null>(() => {
+    try {
+      const cached = localStorage.getItem('crypto_server_bot_status');
+      return cached ? JSON.parse(cached) : null;
+    } catch {
+      return null;
+    }
+  });
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
@@ -35,7 +42,12 @@ export const App: React.FC = () => {
   const loadBotStatus = async () => {
     try {
       const status = await getServerBotStatus();
-      if (status) setServerBot(status);
+      if (status) {
+        setServerBot(status);
+        try {
+          localStorage.setItem('crypto_server_bot_status', JSON.stringify(status));
+        } catch {}
+      }
     } catch (err) {
       console.error('Fehler beim Laden des Bot-Status:', err);
     }
@@ -44,6 +56,60 @@ export const App: React.FC = () => {
   useEffect(() => {
     loadBotStatus();
   }, []);
+
+  // Schnelle Live-Preisaktualisierung für alle offenen Trades (alle 3 Sekunden)
+  useEffect(() => {
+    if (!serverBot || !serverBot.open_positions || serverBot.open_positions.length === 0) return;
+
+    const interval = setInterval(async () => {
+      const positions = serverBot.open_positions || [];
+      if (positions.length === 0) return;
+
+      const symbols = positions.map((p) => p.symbol);
+      const prices = await getLivePrices(symbols);
+      if (!prices || Object.keys(prices).length === 0) return;
+
+      setServerBot((prev) => {
+        if (!prev || !prev.open_positions) return prev;
+        let changed = false;
+        const updatedPositions = prev.open_positions.map((pos) => {
+          const livePrice = prices[pos.symbol];
+          if (livePrice && Math.abs(livePrice - (pos.current_price || 0)) > 0.0000001) {
+            changed = true;
+            const entry = pos.entry_price || livePrice;
+            const lev = pos.leverage || 1;
+            const margin = pos.margin_spent || pos.quote_spent || 50;
+            const baseRoi = (livePrice - entry) / entry;
+            const roiPct = Math.round(baseRoi * 100 * lev * 100) / 100;
+            const pnlUsdt = Math.round(margin * baseRoi * lev * 100) / 100;
+            const peak = Math.max(pos.peak_price || entry, livePrice);
+            return {
+              ...pos,
+              current_price: livePrice,
+              unrealized_roi_pct: roiPct,
+              unrealized_pnl_usdt: pnlUsdt,
+              peak_price: peak
+            };
+          }
+          return pos;
+        });
+
+        if (!changed) return prev;
+
+        const totalMargin = updatedPositions.reduce((sum, p) => sum + (p.margin_spent || p.quote_spent || 0), 0);
+        const totalUnrealized = updatedPositions.reduce((sum, p) => sum + (p.unrealized_pnl_usdt || 0), 0);
+        const posValue = Math.round((totalMargin + totalUnrealized) * 100) / 100;
+
+        return {
+          ...prev,
+          open_positions: updatedPositions,
+          positions_value_usdt: posValue
+        };
+      });
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [serverBot?.open_positions?.length]);
 
   // Best-Pick (Top-Kaufempfehlung) laden
   const loadBestPick = async () => {

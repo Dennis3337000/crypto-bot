@@ -675,4 +675,39 @@ export async function getServerBotJournal(): Promise<TradeJournalEntry[]> {
   }
 }
 
+export async function getLivePrices(symbols: string[]): Promise<Record<string, number>> {
+  if (!symbols || symbols.length === 0) return {};
+  
+  // 1. Erst schnelles Backend abfragen
+  try {
+    const res = await apiFetch('/api/prices');
+    if (res.ok) {
+      return await res.json();
+    }
+  } catch {
+    // Weiter zu direktem Binance-Aufruf
+  }
+
+  // 2. Direkter Fallback auf Binance API im Browser
+  try {
+    const encoded = encodeURIComponent(JSON.stringify(symbols));
+    const url = `https://api.binance.com/api/v3/ticker/price?symbols=${encoded}`;
+    const res = await fetch(url);
+    if (res.ok) {
+      const data = await res.json();
+      const map: Record<string, number> = {};
+      if (Array.isArray(data)) {
+        for (const item of data) {
+          map[item.symbol] = parseFloat(item.price);
+        }
+      }
+      return map;
+    }
+  } catch {
+    // Ignorieren
+  }
+
+  return {};
+}
+
 
