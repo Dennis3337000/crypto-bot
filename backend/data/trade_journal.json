@@ -1,5 +1,23 @@
 [
   {
+    "id": "pos_1794325216293_BTC",
+    "symbol": "BTCUSDT",
+    "coin": "BTC",
+    "side": "LONG",
+    "leverage": 50,
+    "margin_spent": 149.51,
+    "entry_price": 73291.6,
+    "exit_price": 74054.15,
+    "qty": 0.0069,
+    "quote_spent": 149.51,
+    "quote_received": 227.29,
+    "pnl_usdt": 77.78,
+    "roi_pct": 52.02,
+    "entered_at": 1794325216,
+    "closed_at": 1794390076,
+    "exit_reason": "Manuell ueber Dashboard geschlossen (50x Hebel)"
+  },
+  {
     "id": "pos_1794325436250_ETH",
     "symbol": "ETHUSDT",
     "coin": "ETH",

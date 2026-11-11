@@ -30,26 +30,34 @@ export function setAuthToken(token: string | null) {
   else localStorage.removeItem('crypto_auth_token');
 }
 
-async function apiFetch(endpoint: string, init?: RequestInit): Promise<Response> {
+async function apiFetch(endpoint: string, init?: RequestInit, timeoutMs = 7000): Promise<Response> {
   const token = getAuthToken();
   const headers = new Headers(init?.headers || {});
   if (token && !headers.has('Authorization')) {
     headers.set('Authorization', `Bearer ${token}`);
   }
-  const customInit = { ...init, headers };
+
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  const customInit = { ...init, headers, signal: controller.signal };
 
   try {
     const res = await fetch(endpoint, customInit);
+    clearTimeout(timeoutId);
     return res;
-  } catch (err) {
+  } catch (err: any) {
+    clearTimeout(timeoutId);
     if (
       typeof window !== 'undefined' &&
       window.location.protocol === 'http:' &&
       (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
     ) {
       try {
-        return await fetch(`http://127.0.0.1:8001${endpoint}`, customInit);
+        return await fetch(`http://127.0.0.1:8001${endpoint}`, { ...init, headers });
       } catch {}
+    }
+    if (err.name === 'AbortError') {
+      throw new Error(`Zeitüberschreitung (Server antwortete nicht innerhalb von ${timeoutMs / 1000}s)`);
     }
     throw err;
   }

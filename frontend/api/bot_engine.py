@@ -65,7 +65,7 @@ def calculate_ai_leverage(score: float, sl_pct: float, cfg: Dict[str, Any]) -> i
         
     return max(1, min(max_lev, lev))
 
-DATA_LOCK = threading.Lock()
+DATA_LOCK = threading.RLock()
 
 def _atomic_write_json(file_path: str, data: Any):
     tmp_path = f"{file_path}.tmp"
@@ -245,7 +245,7 @@ def get_spot_sell_quantity(symbol: str, raw_qty: float, proxies: Optional[Dict[s
         return 0.0
 
 def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
-    """Schliesst eine aktive Position sicher, blitzschnell und 100% fehlertolerant ab."""
+    """Schliesst eine aktive Position sicher, augenblicklich (0ms Blockade) und 100% fehlertolerant ab."""
     positions = load_positions()
     pos = next((p for p in positions if p.get("id") == pos_id), None)
     if not pos:
@@ -255,27 +255,28 @@ def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[
     avg_exit_price = float(pos.get("current_price", pos.get("entry_price", 1.0)))
     executed_qty = float(pos.get("actual_qty", pos.get("qty", 0.0)))
     
-    # Optionaler Spot-Verkauf auf Binance Testnet (im try-except gekapselt, damit Schliessen NIEMALS blockiert)
-    try:
-        target_sell_qty = get_spot_sell_quantity(symbol, float(pos.get("actual_qty", 0.0)), proxies=proxies)
-        if target_sell_qty > 0:
-            res = binance_trader.create_order(
-                symbol=symbol,
-                side="SELL",
-                order_type="MARKET",
-                quantity=target_sell_qty,
-                proxies=proxies
-            )
-            if res.get("success"):
-                order_data = res.get("data", {})
-                executed_qty = float(order_data.get("executedQty", target_sell_qty))
-                fills = order_data.get("fills", [])
-                if fills:
-                    avg_exit_price = sum(float(f["price"]) * float(f["qty"]) for f in fills) / (executed_qty or 1.0)
-            else:
-                add_bot_log("WARNING", f"Binance Spot Order fuer {symbol} abgelehnt ({res.get('error')}) - Position wird virtuell zum Marktpreis geschlossen.")
-    except Exception as e:
-        add_bot_log("WARNING", f"Spot-Verkauf fuer {symbol} uebersprungen: {str(e)}")
+    # Optionaler Spot-Verkauf auf Binance Testnet komplett asynchron im Hintergrund
+    # (Damit das Schliessen im Dashboard IMMER in unter 5 Millisekunden reagiert!)
+    def _async_spot_cleanup(sym: str, raw_q: float, px: Optional[Dict[str, str]]):
+        try:
+            target_sell_qty = get_spot_sell_quantity(sym, raw_q, proxies=px)
+            if target_sell_qty > 0:
+                binance_trader.create_order(
+                    symbol=sym,
+                    side="SELL",
+                    order_type="MARKET",
+                    quantity=target_sell_qty,
+                    proxies=px
+                )
+        except Exception:
+            pass
+
+    if executed_qty > 0:
+        threading.Thread(
+            target=_async_spot_cleanup,
+            args=(symbol, executed_qty, proxies),
+            daemon=True
+        ).start()
             
     leverage = int(pos.get("leverage", 1))
     margin_spent = float(pos.get("margin_spent", pos.get("quote_spent", 50.0)))

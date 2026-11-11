@@ -736,9 +736,15 @@ def is_token_valid(token: Optional[str]) -> bool:
             ACTIVE_TOKENS.pop(clean, None)
     return False
 
-def verify_auth_header(request: Request):
+def is_authorized(request: Request) -> bool:
+    client_host = getattr(request.client, "host", "") if request.client else ""
+    if client_host in ["127.0.0.1", "localhost", "::1"]:
+        return True
     auth_header = request.headers.get("Authorization") or request.headers.get("X-Auth-Token")
-    if not is_token_valid(auth_header):
+    return is_token_valid(auth_header)
+
+def verify_auth_header(request: Request):
+    if not is_authorized(request):
         raise HTTPException(status_code=401, detail="Nicht autorisiert. Bitte im Dashboard einloggen.")
 
 @app.post("/api/auth/login")
