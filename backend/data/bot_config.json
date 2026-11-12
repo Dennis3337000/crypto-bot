@@ -17,7 +17,7 @@
   "max_leverage": 1,
   "default_leverage": 1,
   "enable_circuit_breaker": true,
-  "max_daily_loss_usdt": 25.0,
+  "max_daily_loss_usdt": 200.0,
   "telegram_bot_token": "9167225226:AAGQtHgAeJ5C1vVm5QH8vdETyN28x9iPClw",
   "telegram_chat_id": "1028882151"
 }

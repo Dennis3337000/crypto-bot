@@ -624,24 +624,32 @@ def check_open_positions_lifecycle(get_current_price_func, analysis_func, proxie
             
     save_positions(updated_positions)
 
+LAST_CIRCUIT_BREAKER_ALERT_DAY: str = ""
+
 def check_circuit_breaker(cfg: Dict[str, Any], proxies: Optional[Dict[str, str]] = None) -> bool:
     """Prueft, ob die Tagesverlust-Bremse ausgeloest wurde (True = Stoppt neue Trades)."""
+    global LAST_CIRCUIT_BREAKER_ALERT_DAY
     if not cfg.get("enable_circuit_breaker", True):
         return False
 
-    limit = float(cfg.get("max_daily_loss_usdt", 25.0))
+    limit = float(cfg.get("max_daily_loss_usdt", 150.0))
     journal = load_journal()
 
     # Berechne realisierten Verlust seit Mitternacht
     now_struct = time.localtime()
     midnight_today = int(time.mktime((now_struct.tm_year, now_struct.tm_mon, now_struct.tm_mday, 0, 0, 0, 0, 0, -1)))
+    today_str = time.strftime("%Y-%m-%d")
 
     today_trades = [t for t in journal if t.get("closed_at", 0) >= midnight_today]
-    today_losses = sum(abs(float(t.get("pnl_usdt", 0.0))) for t in today_trades if float(t.get("pnl_usdt", 0.0)) < 0)
+    # Netto-Tagesergebnis: Gewinne gleichen Verluste aus
+    today_net_pnl = sum(float(t.get("pnl_usdt", 0.0)) for t in today_trades)
 
-    if today_losses >= limit:
-        add_bot_log("WARNING", f"Circuit Breaker aktiv: Tagesverlust von -${today_losses:.2f} hat Limit (${limit:.2f}) erreicht. Neukaeufe pausiert!")
-        telegram_notifier.notify_circuit_breaker_tripped(today_losses, limit, proxies=proxies)
+    if today_net_pnl <= -limit:
+        # Nur EINMAL am Tag alarmieren, nicht bei jedem Scan-Tick!
+        if LAST_CIRCUIT_BREAKER_ALERT_DAY != today_str:
+            LAST_CIRCUIT_BREAKER_ALERT_DAY = today_str
+            add_bot_log("WARNING", f"Circuit Breaker aktiv: Netto-Tagesverlust (-${abs(today_net_pnl):.2f}) hat Limit (${limit:.2f}) erreicht. Neukaeufe pausiert!")
+            telegram_notifier.notify_circuit_breaker_tripped(abs(today_net_pnl), limit, proxies=proxies)
         return True
 
     return False
