@@ -747,6 +747,15 @@ export async function getServerBotJournal(): Promise<TradeJournalEntry[]> {
   }
 }
 
+export async function resetServerBotJournal(): Promise<boolean> {
+  try {
+    const res = await apiFetch('/api/bot/journal/reset', { method: 'POST' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function getLivePrices(symbols: string[]): Promise<Record<string, number>> {
   if (!symbols || symbols.length === 0) return {};
   

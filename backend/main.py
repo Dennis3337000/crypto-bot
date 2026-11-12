@@ -900,6 +900,13 @@ def get_bot_journal_api() -> List[Dict[str, Any]]:
     """Liefert die vollstaendige Historie aller abgeschlossenen Trades."""
     return bot_engine.load_journal()
 
+@app.post("/api/bot/journal/reset")
+def reset_bot_journal_api(request: Request) -> Dict[str, Any]:
+    """Bereinigt oder leert das Trade-Journal auf Wunsch des Benutzers."""
+    verify_auth_header(request)
+    bot_engine.save_journal([])
+    return {"success": True, "message": "Trade-Journal wurde erfolgreich zurueckgesetzt."}
+
 # --- STATISCHES FRONTEND SERVING (Fuer 1-Container Cloud Deployments) ---
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse

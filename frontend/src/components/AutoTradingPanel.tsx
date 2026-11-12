@@ -7,7 +7,8 @@ import {
   toggleServerBot,
   updateServerBotConfig,
   closeServerBotPosition,
-  getServerBotJournal
+  getServerBotJournal,
+  resetServerBotJournal
 } from '../binanceService';
 
 interface AutoTradingPanelProps {
@@ -38,6 +39,32 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
   const [isClosingId, setIsClosingId] = useState<string | null>(null);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [activeTab, setActiveTab] = useState<'positions' | 'journal' | 'logs' | 'playbook'>('positions');
+  const [isResettingJournal, setIsResettingJournal] = useState<boolean>(false);
+
+  const handleResetJournal = async () => {
+    if (!window.confirm('Möchtest du das Trade-Journal wirklich leeren und alle alten Phantom-Trades zurücksetzen?')) {
+      return;
+    }
+    setIsResettingJournal(true);
+    try {
+      const ok = await resetServerBotJournal();
+      if (ok) {
+        setJournal([]);
+        if (onRefreshBot) onRefreshBot();
+        setMessage({
+          type: 'success',
+          text: '✓ Trade-Journal und Gesamt-PnL wurden erfolgreich auf 0 zurückgesetzt!'
+        });
+      }
+    } catch {
+      setMessage({
+        type: 'error',
+        text: 'Fehler beim Zurücksetzen des Journals.'
+      });
+    } finally {
+      setIsResettingJournal(false);
+    }
+  };
 
   const serverBot = propServerBot || localServerBot;
 
@@ -497,6 +524,31 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
       {/* Tab 2: Trade-Journal (Abgeschlossene Trades) */}
       {activeTab === 'journal' && (
         <div className="tab-content-area">
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+            <span style={{ fontSize: '13px', color: 'var(--text-dim)', fontWeight: 600 }}>
+              Abgeschlossene Trades Historie ({journal.length})
+            </span>
+            {journal.length > 0 && (
+              <button
+                onClick={handleResetJournal}
+                disabled={isResettingJournal}
+                style={{
+                  background: 'rgba(255, 56, 96, 0.12)',
+                  border: '1px solid rgba(255, 56, 96, 0.35)',
+                  color: 'var(--color-red)',
+                  padding: '5px 12px',
+                  borderRadius: '6px',
+                  cursor: 'pointer',
+                  fontSize: '11px',
+                  fontWeight: 700,
+                  transition: 'all 0.2s ease'
+                }}
+                title="Bereinigt das Trade-Journal und setzt die PnL-Statistik auf 0 zurück"
+              >
+                {isResettingJournal ? 'Setze zurück...' : '🗑️ Journal leeren (Reset)'}
+              </button>
+            )}
+          </div>
           {journal.length === 0 ? (
             <div className="empty-positions-box">
               <span>Bisher noch keine abgeschlossenen Trades im Journal.</span>
