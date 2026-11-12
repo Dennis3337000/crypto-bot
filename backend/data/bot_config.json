@@ -1,10 +1,11 @@
 {
   "enabled": true,
+  "trading_mode": "SPOT",
   "initial_capital": 10000.0,
-  "order_size_usdt": 150.0,
-  "min_score": 50.0,
-  "max_open_positions": 10,
-  "cooldown_minutes": 1,
+  "order_size_usdt": 50.0,
+  "min_score": 65.0,
+  "max_open_positions": 4,
+  "cooldown_minutes": 5,
   "scan_interval_seconds": 12,
   "auto_stop_loss": true,
   "auto_take_profit": true,
@@ -12,7 +13,11 @@
   "enable_smart_dca": true,
   "max_dca_levels": 1,
   "dca_min_dip_pct": 1.8,
-  "leverage_mode": "AI_DYNAMIC",
-  "max_leverage": 50,
-  "default_leverage": 25
+  "leverage_mode": "MANUAL",
+  "max_leverage": 1,
+  "default_leverage": 1,
+  "enable_circuit_breaker": true,
+  "max_daily_loss_usdt": 25.0,
+  "telegram_bot_token": "9167225226:AAGQtHgAeJ5C1vVm5QH8vdETyN28x9iPClw",
+  "telegram_chat_id": "1028882151"
 }

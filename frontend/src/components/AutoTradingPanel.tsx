@@ -8,7 +8,9 @@ import {
   updateServerBotConfig,
   closeServerBotPosition,
   getServerBotJournal,
-  resetServerBotJournal
+  resetServerBotJournal,
+  triggerEmergencyStop,
+  sendTelegramTestMessage
 } from '../binanceService';
 
 interface AutoTradingPanelProps {
@@ -40,6 +42,62 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [activeTab, setActiveTab] = useState<'positions' | 'journal' | 'logs' | 'playbook'>('positions');
   const [isResettingJournal, setIsResettingJournal] = useState<boolean>(false);
+  const [isEmergencyStopping, setIsEmergencyStopping] = useState<boolean>(false);
+  const [isTestingTelegram, setIsTestingTelegram] = useState<boolean>(false);
+
+  const handleEmergencyStop = async () => {
+    if (!window.confirm('ACHTUNG: Möchtest du wirklich den NOTFALL-STOPP auslösen? Dies schließt ALLE offenen Positionen sofort zu Marktpreisen und schaltet den Bot komplett ab!')) {
+      return;
+    }
+    setIsEmergencyStopping(true);
+    try {
+      const res = await triggerEmergencyStop();
+      if (res.success) {
+        setMessage({
+          type: 'success',
+          text: `🚨 NOTFALL-STOPP ERFOLGREICH: ${res.closed_count || 0} Position(en) sofort liquidiert. Bot ist deaktiviert.`
+        });
+        refreshAll();
+      } else {
+        setMessage({
+          type: 'error',
+          text: `Fehler beim Notfall-Stopp: ${res.message || 'Unbekannt'}`
+        });
+      }
+    } catch (err: any) {
+      setMessage({
+        type: 'error',
+        text: `Fehler: ${err.message}`
+      });
+    } finally {
+      setIsEmergencyStopping(false);
+    }
+  };
+
+  const handleTestTelegram = async () => {
+    setIsTestingTelegram(true);
+    try {
+      const ok = await sendTelegramTestMessage();
+      if (ok) {
+        setMessage({
+          type: 'success',
+          text: '📱 Telegram Test-Nachricht erfolgreich gesendet! Prüfe dein Smartphone.'
+        });
+      } else {
+        setMessage({
+          type: 'error',
+          text: 'Fehler beim Senden der Telegram-Nachricht.'
+        });
+      }
+    } catch {
+      setMessage({
+        type: 'error',
+        text: 'Verbindungsfehler zu Telegram.'
+      });
+    } finally {
+      setIsTestingTelegram(false);
+    }
+  };
 
   const handleResetJournal = async () => {
     if (!window.confirm('Möchtest du das Trade-Journal wirklich leeren und alle alten Phantom-Trades zurücksetzen?')) {
@@ -254,6 +312,29 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
             </div>
           )}
 
+          {/* Telegram Test Button */}
+          <button
+            onClick={handleTestTelegram}
+            disabled={isTestingTelegram}
+            className="telegram-test-btn"
+            title="Sendet eine Test-Nachricht an dein Smartphone via Telegram"
+            style={{
+              background: 'rgba(0, 229, 255, 0.12)',
+              border: '1px solid rgba(0, 229, 255, 0.35)',
+              color: 'var(--color-cyan)',
+              padding: '8px 14px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 700,
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px'
+            }}
+          >
+            {isTestingTelegram ? 'Sende...' : '📱 Telegram'}
+          </button>
+
           {/* 24/7 Bot Schalter */}
           <button
             onClick={handleToggleBot}
@@ -261,6 +342,27 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
             title="Schaltet den 24/7 Hintergrund-Trading-Bot an oder aus"
           >
             {botIsRunning ? '⚡ 24/7 BOT: AKTIV' : '⏸ 24/7 BOT: PAUSIERT'}
+          </button>
+
+          {/* Notfall-Panik-Knopf */}
+          <button
+            onClick={handleEmergencyStop}
+            disabled={isEmergencyStopping}
+            className="panic-kill-btn"
+            title="NOTFALL: Sofort alle Positionen zu Marktpreisen liquidieren und Bot anhalten"
+            style={{
+              background: 'linear-gradient(135deg, rgba(255, 56, 96, 0.25) 0%, rgba(255, 56, 96, 0.45) 100%)',
+              border: '1px solid var(--color-red)',
+              color: '#fff',
+              padding: '8px 14px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '12px',
+              fontWeight: 800,
+              letterSpacing: '0.5px'
+            }}
+          >
+            {isEmergencyStopping ? 'Liquidiert...' : '🚨 PANIK-STOPP'}
           </button>
         </div>
       </div>

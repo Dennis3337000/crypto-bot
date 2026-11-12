@@ -756,6 +756,24 @@ export async function resetServerBotJournal(): Promise<boolean> {
   }
 }
 
+export async function triggerEmergencyStop(): Promise<{ success: boolean; closed_count?: number; message?: string }> {
+  try {
+    const res = await apiFetch('/api/bot/emergency-stop', { method: 'POST' });
+    return await res.json();
+  } catch (err: any) {
+    return { success: false, message: err.message || 'Verbindungsfehler beim Notfall-Stopp' };
+  }
+}
+
+export async function sendTelegramTestMessage(): Promise<boolean> {
+  try {
+    const res = await apiFetch('/api/bot/telegram/test', { method: 'POST' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function getLivePrices(symbols: string[]): Promise<Record<string, number>> {
   if (!symbols || symbols.length === 0) return {};
   

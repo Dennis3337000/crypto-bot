@@ -5,6 +5,7 @@ import threading
 import secrets
 from typing import Dict, Any, List, Optional
 import binance_trader
+import telegram_notifier
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 CONFIG_FILE = os.path.join(DATA_DIR, "bot_config.json")
@@ -45,6 +46,10 @@ def ensure_data_files():
 
 def calculate_ai_leverage(score: float, sl_pct: float, cfg: Dict[str, Any]) -> int:
     """Ermittelt den optimalen Hebel anhand von KI-Score und Stop-Loss-Abstand."""
+    trading_mode = cfg.get("trading_mode", "SPOT").upper()
+    if trading_mode == "SPOT" or int(cfg.get("default_leverage", 1)) == 1 or int(cfg.get("max_leverage", 1)) == 1:
+        return 1
+
     mode = cfg.get("leverage_mode", "AI_DYNAMIC")
     max_lev = int(cfg.get("max_leverage", 100))
     if mode == "MANUAL":
@@ -387,7 +392,45 @@ def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[
     
     msg = f"Position {pos.get('coin')} ({leverage}x Hebel) geschlossen: {exit_reason} | PnL: {'+' if pnl_usdt >= 0 else ''}{pnl_usdt} USDT ({roi_pct}%)"
     add_bot_log("SUCCESS", msg)
+
+    telegram_notifier.notify_trade_closed(
+        coin=pos.get("coin", symbol.replace("USDT", "")),
+        pnl=pnl_usdt,
+        roi=roi_pct,
+        exit_price=smart_round(avg_exit_price, avg_exit_price),
+        exit_reason=exit_reason,
+        leverage=leverage,
+        proxies=proxies
+    )
+
     return {"success": True, "journal_entry": journal_entry}
+
+def emergency_stop_all(reason: str = "Manuell ueber Panik-Knopf ausgeloest", proxies: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    """Schliesst sofort alle Positionen zu Marktpreisen, bricht Orders ab und stoppt den Bot."""
+    global BOT_RUNNING
+    BOT_RUNNING = False
+
+    cfg = load_config()
+    cfg["enabled"] = False
+    save_config(cfg)
+
+    positions = load_positions()
+    closed_count = 0
+
+    for pos in list(positions):
+        pos_id = pos.get("id")
+        if pos_id:
+            close_active_position(pos_id, f"PANIK-STOPP: {reason}", proxies=proxies)
+            closed_count += 1
+
+    add_bot_log("WARNING", f"NOTFALL-STOPP: {closed_count} Position(en) sofort liquidiert. Bot dauerhaft deaktiviert.")
+    telegram_notifier.notify_emergency_stop(closed_count, reason, proxies=proxies)
+
+    return {
+        "success": True,
+        "closed_count": closed_count,
+        "message": f"Notfall-Stopp erfolgreich: {closed_count} Position(en) liquidiert und Bot gestoppt."
+    }
 
 def check_open_positions_lifecycle(get_current_price_func, analysis_func, proxies: Optional[Dict[str, str]] = None):
     """Ueberwacht alle offenen Positionen auf Stop-Loss, Trailing-Stop, Take-Profit und Smart DCA."""
@@ -562,6 +605,14 @@ def check_open_positions_lifecycle(get_current_price_func, analysis_func, proxie
                                         f"(Stufe {pos['dca_count']}/{max_dca}, +{new_quote_spent:.2f} USDT nachinvestiert)."
                                     )
                                     add_bot_log("SUCCESS", msg)
+                                    telegram_notifier.notify_dca_triggered(
+                                        coin=coin,
+                                        old_entry=old_entry,
+                                        new_entry=new_avg_entry,
+                                        dca_step=pos["dca_count"],
+                                        added_spent=new_quote_spent,
+                                        proxies=proxies
+                                    )
                                 else:
                                     add_bot_log("ERROR", f"Nachkauf fuer {coin} fehlgeschlagen: {dca_res.get('error')}")
                     except Exception as e:
@@ -573,12 +624,38 @@ def check_open_positions_lifecycle(get_current_price_func, analysis_func, proxie
             
     save_positions(updated_positions)
 
+def check_circuit_breaker(cfg: Dict[str, Any], proxies: Optional[Dict[str, str]] = None) -> bool:
+    """Prueft, ob die Tagesverlust-Bremse ausgeloest wurde (True = Stoppt neue Trades)."""
+    if not cfg.get("enable_circuit_breaker", True):
+        return False
+
+    limit = float(cfg.get("max_daily_loss_usdt", 25.0))
+    journal = load_journal()
+
+    # Berechne realisierten Verlust seit Mitternacht
+    now_struct = time.localtime()
+    midnight_today = int(time.mktime((now_struct.tm_year, now_struct.tm_mon, now_struct.tm_mday, 0, 0, 0, 0, 0, -1)))
+
+    today_trades = [t for t in journal if t.get("closed_at", 0) >= midnight_today]
+    today_losses = sum(abs(float(t.get("pnl_usdt", 0.0))) for t in today_trades if float(t.get("pnl_usdt", 0.0)) < 0)
+
+    if today_losses >= limit:
+        add_bot_log("WARNING", f"Circuit Breaker aktiv: Tagesverlust von -${today_losses:.2f} hat Limit (${limit:.2f}) erreicht. Neukaeufe pausiert!")
+        telegram_notifier.notify_circuit_breaker_tripped(today_losses, limit, proxies=proxies)
+        return True
+
+    return False
+
 def scan_and_open_new_trades(analysis_func, best_pick_func, proxies: Optional[Dict[str, str]] = None):
-    """Prueft Marktchancen und oeffnet mehrere Positionen gleichzeitig im Testnet."""
+    """Scannt parallel alle Coins und eroeffnet mehrere Positionen gleichzeitig bei A+ Setups."""
     cfg = load_config()
     if not cfg.get("enabled", True):
         return
-        
+
+    # 1. Sicherheitspruefung: Tagesverlust-Bremse
+    if check_circuit_breaker(cfg, proxies=proxies):
+        return
+
     positions = load_positions()
     max_pos = int(cfg.get("max_open_positions", 8))
     if len(positions) >= max_pos:
@@ -756,6 +833,17 @@ def scan_and_open_new_trades(analysis_func, best_pick_func, proxies: Optional[Di
                     add_bot_log(
                         "SUCCESS",
                         f"24/7 Bot hat Position eroeffnet: {coin} ({leverage}x Hebel, Kaufkraft: ${notional_val:.2f}, Margin: ${actual_spent:.2f}) @ ${avg_price:.2f} (SL: ${sl_val:.2f}, TP2: ${tp2_val:.2f})"
+                    )
+                    telegram_notifier.notify_trade_opened(
+                        coin=coin,
+                        entry_price=clean_entry,
+                        margin=round(actual_spent, 2),
+                        sl=sl_val,
+                        tp1=tp1_val,
+                        tp2=tp2_val,
+                        reason=candidate.get('signal_label', '100% A+ Setup'),
+                        leverage=leverage,
+                        proxies=proxies
                     )
                 else:
                     err_msg = order_res.get('error', 'Unbekannter Fehler')

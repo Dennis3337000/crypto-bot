@@ -907,6 +907,26 @@ def reset_bot_journal_api(request: Request) -> Dict[str, Any]:
     bot_engine.save_journal([])
     return {"success": True, "message": "Trade-Journal wurde erfolgreich zurueckgesetzt."}
 
+@app.post("/api/bot/emergency-stop")
+def emergency_stop_api(request: Request) -> Dict[str, Any]:
+    """Panik-Knopf: Liquidiert alle Positionen, bricht Orders ab und schaltet den Bot ab."""
+    verify_auth_header(request)
+    return bot_engine.emergency_stop_all(reason="Manuell ueber Dashboard Panik-Button ausgeloest", proxies=PROXIES)
+
+@app.post("/api/bot/telegram/test")
+def test_telegram_api(request: Request) -> Dict[str, Any]:
+    """Sendet eine Test-Nachricht an den konfigurierten Telegram-Empfaenger."""
+    verify_auth_header(request)
+    import telegram_notifier
+    telegram_notifier.send_telegram_alert(
+        "<b>CryptoAnalyzer Telegram-Verbindung ERFOLGREICH!</b>\n\n"
+        "Chef, dein Trading-Bot ist jetzt live mit deinem Smartphone verbunden.\n"
+        f"<b>Status:</b> Bereit fuer Echtzeit-Alerts\n"
+        f"<b>Zeit:</b> {time.strftime('%d.%m.%Y %H:%M:%S')}",
+        proxies=PROXIES
+    )
+    return {"success": True, "message": "Telegram Test-Nachricht wurde ausgeloest."}
+
 # --- STATISCHES FRONTEND SERVING (Fuer 1-Container Cloud Deployments) ---
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
