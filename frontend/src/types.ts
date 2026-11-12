@@ -248,6 +248,7 @@ export interface ServerBotStatus {
   total_trades: number;
   win_rate_pct: number;
   total_pnl_usdt: number;
+  is_testnet?: boolean;
   circuit_breaker_active?: boolean;
   today_net_pnl?: number;
   daily_loss_limit?: number;

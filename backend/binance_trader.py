@@ -7,6 +7,7 @@ from typing import Dict, Any, List, Optional
 import requests
 
 TESTNET_BASE_URL = "https://testnet.binance.vision"
+MAINNET_BASE_URL = "https://api.binance.com"
 
 def get_env_config() -> Dict[str, str]:
     """Liest die lokale .env Datei im backend Ordner ein."""
@@ -30,15 +31,33 @@ def get_env_config() -> Dict[str, str]:
                 pass
     return env_vars
 
-def get_api_credentials() -> Dict[str, str]:
-    """Gibt API Key und Secret zurueck."""
+def is_testnet_mode() -> bool:
+    """Prueft ob der Bot im Testnet-Modus laeuft."""
     cfg = get_env_config()
-    api_key = os.environ.get("BINANCE_TESTNET_API_KEY") or cfg.get("BINANCE_TESTNET_API_KEY", "")
-    api_secret = os.environ.get("BINANCE_TESTNET_API_SECRET") or cfg.get("BINANCE_TESTNET_API_SECRET", "")
+    val = os.environ.get("BINANCE_USE_TESTNET", cfg.get("BINANCE_USE_TESTNET", "true")).lower()
+    return val in ["true", "1", "yes"]
+
+def get_base_url() -> str:
+    """Liefert die passende Binance Basis-URL (Testnet vs. Echtgeld)."""
+    return TESTNET_BASE_URL if is_testnet_mode() else MAINNET_BASE_URL
+
+def get_api_credentials() -> Dict[str, Any]:
+    """Gibt API Key und Secret passend zum Modus (Testnet vs. Echtgeld) zurueck."""
+    cfg = get_env_config()
+    testnet = is_testnet_mode()
+
+    if testnet:
+        api_key = os.environ.get("BINANCE_TESTNET_API_KEY") or cfg.get("BINANCE_TESTNET_API_KEY", "")
+        api_secret = os.environ.get("BINANCE_TESTNET_API_SECRET") or cfg.get("BINANCE_TESTNET_API_SECRET", "")
+    else:
+        api_key = os.environ.get("BINANCE_API_KEY") or cfg.get("BINANCE_API_KEY", "")
+        api_secret = os.environ.get("BINANCE_API_SECRET") or cfg.get("BINANCE_API_SECRET", "")
+
     return {
         "api_key": api_key,
         "api_secret": api_secret,
-        "is_configured": bool(api_key and api_secret and api_key != "DEIN_API_KEY_HIER_EINTRAGEN")
+        "is_testnet": testnet,
+        "is_configured": bool(api_key and api_secret and not api_key.startswith("DEIN_"))
     }
 
 def sign_params(params: Dict[str, Any], secret: str) -> Dict[str, Any]:
@@ -63,23 +82,25 @@ def binance_signed_request(
 ) -> Dict[str, Any]:
     """Fuehrt einen signierten Request gegen das Binance Testnet aus."""
     creds = get_api_credentials()
+    base_name = "Testnet" if creds.get("is_testnet") else "Echtgeld"
+
     if not creds["is_configured"]:
         return {
             "success": False,
-            "error": "Binance Testnet API Key oder Secret fehlt. Bitte in backend/.env eintragen."
+            "error": f"Binance {base_name} API Key oder Secret fehlt. Bitte in backend/.env eintragen."
         }
-        
+
     api_key = creds["api_key"]
     api_secret = creds["api_secret"]
-    
+
     headers = {
         "X-MBX-APIKEY": api_key,
         "User-Agent": "CryptoAnalyzer-Agent/1.0"
     }
-    
-    url = f"{TESTNET_BASE_URL}{endpoint}"
+
+    url = f"{get_base_url()}{endpoint}"
     req_params = sign_params(params or {}, api_secret)
-    
+
     try:
         if method.upper() == "GET":
             res = requests.get(url, headers=headers, params=req_params, proxies=proxies, timeout=10)
@@ -89,15 +110,15 @@ def binance_signed_request(
             res = requests.delete(url, headers=headers, params=req_params, proxies=proxies, timeout=10)
         else:
             return {"success": False, "error": f"Nicht unterstuetzte HTTP-Methode: {method}"}
-            
+
         data = res.json()
         if res.status_code >= 400:
             err_msg = data.get("msg", str(data))
-            return {"success": False, "error": f"Binance Testnet Fehler ({res.status_code}): {err_msg}"}
+            return {"success": False, "error": f"Binance {base_name} Fehler ({res.status_code}): {err_msg}"}
             
         return {"success": True, "data": data}
     except Exception as e:
-        return {"success": False, "error": f"Netzwerkfehler zum Binance Testnet: {str(e)}"}
+        return {"success": False, "error": f"Netzwerkfehler zu Binance ({base_name}): {str(e)}"}
 
 BALANCE_CACHE = {
     "timestamp": 0,

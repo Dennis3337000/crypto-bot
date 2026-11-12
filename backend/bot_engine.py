@@ -272,6 +272,7 @@ def get_bot_status(price_provider_func=None) -> Dict[str, Any]:
         "initial_capital_usdt": initial_capital,
         "capital_growth_pct": capital_growth_pct,
         "wallet_testnet_usdt": round(CACHED_USDT_FREE, 2),
+        "is_testnet": binance_trader.is_testnet_mode(),
         "open_positions_count": len(positions),
         "open_positions": positions,
         "total_trades": total_trades,

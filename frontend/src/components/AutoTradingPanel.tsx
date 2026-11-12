@@ -316,7 +316,20 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
         <div className="exec-title-group">
           <span className="exec-icon">🤖</span>
           <div>
-            <div className="exec-title">24/7 AUTONOMER TRADING-BOT • BINANCE TESTNET</div>
+            <div className="exec-title" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <span>24/7 AUTONOMER TRADING-BOT</span>
+              <span style={{
+                fontSize: '11px',
+                fontWeight: 800,
+                padding: '2px 8px',
+                borderRadius: '4px',
+                background: serverBot?.is_testnet === false ? 'rgba(255, 56, 96, 0.2)' : 'rgba(0, 230, 118, 0.2)',
+                color: serverBot?.is_testnet === false ? 'var(--color-red)' : 'var(--color-green)',
+                border: serverBot?.is_testnet === false ? '1px solid var(--color-red)' : '1px solid var(--color-green)'
+              }}>
+                {serverBot?.is_testnet === false ? '🔴 ECHTGELD LIVE' : '🟢 TESTNET SIMULATION'}
+              </span>
+            </div>
             <div className="exec-subtitle">
               Läuft als permanenter Python-Hintergrund-Dienst (Handelt, setzt Stop-Loss & nimmt Gewinne mit – auch bei geschlossenem Browser)
             </div>
