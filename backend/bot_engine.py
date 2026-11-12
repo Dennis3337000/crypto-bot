@@ -110,7 +110,28 @@ def load_journal() -> List[Dict[str, Any]]:
     with DATA_LOCK:
         try:
             with open(JOURNAL_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
+                journal = json.load(f)
+
+            # Sanity-Filter: Bereinige eventuelle historische Phantom-Gewinne aus verbuggtem DCA
+            cleaned = False
+            for t in journal:
+                margin = float(t.get("margin_spent", t.get("quote_spent", 50.0)))
+                entry = float(t.get("entry_price", 1.0))
+                exit_p = float(t.get("exit_price", entry))
+                lev = int(t.get("leverage", 1))
+                pnl = float(t.get("pnl_usdt", 0.0))
+                if margin > 0 and abs(pnl) > (margin * lev * 0.4):
+                    raw_diff = (exit_p - entry) / entry if entry > 0 else 0.0
+                    bounded_diff = max(-0.35, min(0.35, raw_diff))
+                    t["roi_pct"] = round(bounded_diff * 100 * lev, 2)
+                    t["pnl_usdt"] = round(margin * bounded_diff * lev, 2)
+                    t["quote_received"] = round(margin + t["pnl_usdt"], 2)
+                    cleaned = True
+
+            if cleaned:
+                _atomic_write_json(JOURNAL_FILE, journal)
+
+            return journal
         except Exception:
             return []
 
@@ -171,7 +192,8 @@ def get_bot_status(price_provider_func=None) -> Dict[str, Any]:
                 entry_price = float(pos.get("entry_price", curr_price))
                 leverage = int(pos.get("leverage", 1))
                 margin_spent = float(pos.get("margin_spent", pos.get("quote_spent", 50.0)))
-                base_roi = (curr_price - entry_price) / entry_price if entry_price > 0 else 0.0
+                raw_diff = (curr_price - entry_price) / entry_price if entry_price > 0 else 0.0
+                base_roi = max(-0.35, min(0.35, raw_diff))
                 pos["unrealized_roi_pct"] = round(base_roi * 100 * leverage, 2)
                 pos["unrealized_pnl_usdt"] = round(margin_spent * base_roi * leverage, 2)
                 peak_price = float(pos.get("peak_price", entry_price))
@@ -286,13 +308,11 @@ def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[
     leverage = int(pos.get("leverage", 1))
     margin_spent = float(pos.get("margin_spent", pos.get("quote_spent", 50.0)))
     entry_price = float(pos.get("entry_price", avg_exit_price))
-    
+
     # Sanity-Check: Verhindere absurde PnL-Spikes durch fehlerhafte Test-Preise
-    if entry_price <= 0 or abs(avg_exit_price - entry_price) / (entry_price or 1.0) > 0.35:
-        base_diff = (avg_exit_price - entry_price) / (entry_price or 1.0)
-    else:
-        base_diff = (avg_exit_price - entry_price) / entry_price
-        
+    raw_diff = (avg_exit_price - entry_price) / entry_price if entry_price > 0 else 0.0
+    base_diff = max(-0.35, min(0.35, raw_diff))
+
     roi_pct = round(base_diff * 100 * leverage, 2)
     pnl_usdt = round(margin_spent * (base_diff * leverage), 2)
     quote_received = round(margin_spent + pnl_usdt, 2)
@@ -353,7 +373,8 @@ def check_open_positions_lifecycle(get_current_price_func, analysis_func, proxie
             pos["current_price"] = curr_price
             leverage = int(pos.get("leverage", 1))
             margin_spent = float(pos.get("margin_spent", pos.get("quote_spent", 50.0)))
-            base_roi = (curr_price - entry_price) / entry_price
+            raw_roi = (curr_price - entry_price) / entry_price if entry_price > 0 else 0.0
+            base_roi = max(-0.35, min(0.35, raw_roi))
             pos["unrealized_roi_pct"] = round(base_roi * 100 * leverage, 2)
             pos["unrealized_pnl_usdt"] = round(margin_spent * base_roi * leverage, 2)
             
@@ -459,31 +480,42 @@ def check_open_positions_lifecycle(get_current_price_func, analysis_func, proxie
                                         new_fill_price = curr_price
                                         
                                     new_quote_spent = new_fill_price * new_qty
-                                    
+
                                     # Neuer Mischkurs berechnen
-                                    old_qty = pos["qty"]
-                                    old_spent = pos["quote_spent"]
-                                    total_qty = old_qty + new_qty
-                                    total_spent = old_spent + new_quote_spent
-                                    new_avg_entry = round(total_spent / (total_qty or 1.0), 4)
-                                    
-                                    pos["qty"] = total_qty
-                                    pos["quote_spent"] = round(total_spent, 2)
+                                    leverage = int(pos.get("leverage", 1))
+                                    old_margin = float(pos.get("margin_spent", pos.get("quote_spent", 50.0)))
+                                    old_entry = float(pos.get("entry_price", curr_price))
+
+                                    total_margin = round(old_margin + new_quote_spent, 2)
+                                    # Exakter gewichteter Mischkurs anhand des investierten Kapitals
+                                    new_avg_entry = round(((old_entry * old_margin) + (new_fill_price * new_quote_spent)) / (total_margin or 1.0), 4)
+
+                                    old_actual_qty = float(pos.get("actual_qty", pos.get("qty", 0.0) / (leverage or 1)))
+                                    total_actual_qty = round(old_actual_qty + new_qty, 5)
+                                    total_leveraged_qty = round(total_actual_qty * leverage, 5)
+
+                                    pos["actual_qty"] = total_actual_qty
+                                    pos["qty"] = total_leveraged_qty
+                                    pos["margin_spent"] = total_margin
+                                    pos["quote_spent"] = total_margin
+                                    pos["notional_value"] = round(total_margin * leverage, 2)
                                     pos["entry_price"] = new_avg_entry
                                     pos["dca_count"] = dca_count + 1
                                     pos["last_dca_time"] = int(time.time())
-                                    
+
                                     # Anpassung von SL und TP an den neuen, besseren Mischkurs
-                                    pos["take_profit_1"] = round(new_avg_entry * 1.02, 4)
-                                    pos["take_profit_2"] = round(new_avg_entry * 1.045, 4)
+                                    pos["take_profit_1"] = round(new_avg_entry * 1.025, 4)
+                                    pos["take_profit_2"] = round(new_avg_entry * 1.055, 4)
                                     if sup > 0:
-                                        pos["stop_loss"] = round(sup * 0.988, 4)
-                                        
-                                    pos["unrealized_pnl_usdt"] = round((curr_price - new_avg_entry) * total_qty, 2)
-                                    pos["unrealized_roi_pct"] = round(((curr_price - new_avg_entry) / new_avg_entry) * 100, 2)
-                                    
+                                        pos["stop_loss"] = round(sup * 0.985, 4)
+
+                                    raw_roi = (curr_price - new_avg_entry) / new_avg_entry if new_avg_entry > 0 else 0.0
+                                    bounded_roi = max(-0.35, min(0.35, raw_roi))
+                                    pos["unrealized_roi_pct"] = round(bounded_roi * 100 * leverage, 2)
+                                    pos["unrealized_pnl_usdt"] = round(total_margin * bounded_roi * leverage, 2)
+
                                     msg = (
-                                        f"KI-Nachkauf fuer {coin} erfolgreich! Mischkurs von ${entry_price:.2f} auf ${new_avg_entry:.2f} verguenstigt "
+                                        f"KI-Nachkauf fuer {coin} erfolgreich! Mischkurs von ${old_entry:.4f} auf ${new_avg_entry:.4f} verguenstigt "
                                         f"(Stufe {pos['dca_count']}/{max_dca}, +{new_quote_spent:.2f} USDT nachinvestiert)."
                                     )
                                     add_bot_log("SUCCESS", msg)

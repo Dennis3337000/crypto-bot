@@ -89,7 +89,8 @@ export const App: React.FC = () => {
             const entry = pos.entry_price || livePrice;
             const lev = pos.leverage || 1;
             const margin = pos.margin_spent || pos.quote_spent || 50;
-            const baseRoi = (livePrice - entry) / entry;
+            const rawRoi = entry > 0 ? (livePrice - entry) / entry : 0;
+            const baseRoi = Math.max(-0.35, Math.min(0.35, rawRoi));
             const roiPct = Math.round(baseRoi * 100 * lev * 100) / 100;
             const pnlUsdt = Math.round(margin * baseRoi * lev * 100) / 100;
             const peak = Math.max(pos.peak_price || entry, livePrice);
