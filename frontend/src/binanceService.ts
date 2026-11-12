@@ -774,6 +774,15 @@ export async function sendTelegramTestMessage(): Promise<boolean> {
   }
 }
 
+export async function unlockCircuitBreaker(): Promise<boolean> {
+  try {
+    const res = await apiFetch('/api/bot/circuit-breaker/unlock', { method: 'POST' });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function getLivePrices(symbols: string[]): Promise<Record<string, number>> {
   if (!symbols || symbols.length === 0) return {};
   

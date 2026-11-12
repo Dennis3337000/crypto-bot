@@ -10,7 +10,8 @@ import {
   getServerBotJournal,
   resetServerBotJournal,
   triggerEmergencyStop,
-  sendTelegramTestMessage
+  sendTelegramTestMessage,
+  unlockCircuitBreaker
 } from '../binanceService';
 
 interface AutoTradingPanelProps {
@@ -44,6 +45,33 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
   const [isResettingJournal, setIsResettingJournal] = useState<boolean>(false);
   const [isEmergencyStopping, setIsEmergencyStopping] = useState<boolean>(false);
   const [isTestingTelegram, setIsTestingTelegram] = useState<boolean>(false);
+  const [isUnlockingCb, setIsUnlockingCb] = useState<boolean>(false);
+
+  const handleUnlockCircuitBreaker = async () => {
+    setIsUnlockingCb(true);
+    try {
+      const ok = await unlockCircuitBreaker();
+      if (ok) {
+        setMessage({
+          type: 'success',
+          text: '✓ Circuit-Breaker erfolgreich entsperrt! Der Bot scannt und kauft wieder.'
+        });
+        refreshAll();
+      } else {
+        setMessage({
+          type: 'error',
+          text: 'Fehler beim Entsperren des Circuit-Breakers.'
+        });
+      }
+    } catch {
+      setMessage({
+        type: 'error',
+        text: 'Verbindungsfehler beim Entsperren.'
+      });
+    } finally {
+      setIsUnlockingCb(false);
+    }
+  };
 
   const handleEmergencyStop = async () => {
     if (!window.confirm('ACHTUNG: Möchtest du wirklich den NOTFALL-STOPP auslösen? Dies schließt ALLE offenen Positionen sofort zu Marktpreisen und schaltet den Bot komplett ab!')) {
@@ -374,6 +402,45 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
           <span>
             <strong>24/7 AUTOPILOT & SMART-DCA AKTIV:</strong> Scannt alle 12s nach Kaufchancen. <strong>Neu:</strong> Bei gesunden Dips am Support kauft der Bot selbstständig bis zu 2x nach, um den Einstiegskurs zu verbilligen. Stop-Loss & Take-Profit werden rund um die Uhr überwacht.
           </span>
+        </div>
+      )}
+
+      {/* 2b. Circuit Breaker Warning Banner */}
+      {serverBot?.circuit_breaker_active && (
+        <div style={{
+          background: 'rgba(255, 170, 0, 0.15)',
+          border: '1px solid rgba(255, 170, 0, 0.45)',
+          borderRadius: '8px',
+          padding: '12px 16px',
+          margin: '12px 0',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          gap: '12px',
+          color: '#ffc107',
+          fontSize: '13px',
+          fontWeight: 600
+        }}>
+          <div>
+            ⚠️ <strong>TAGESVERLUST-NOTBREMSE (CIRCUIT BREAKER) AKTIV:</strong> Neukäufe sind pausiert (Netto-Tagesergebnis: -${Math.abs(serverBot.today_net_pnl || 0).toFixed(2)} / Limit: -${(serverBot.daily_loss_limit || 200).toFixed(2)} USDT).
+          </div>
+          <button
+            onClick={handleUnlockCircuitBreaker}
+            disabled={isUnlockingCb}
+            style={{
+              background: '#ffc107',
+              color: '#000',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '6px 14px',
+              cursor: 'pointer',
+              fontWeight: 800,
+              fontSize: '12px',
+              whiteSpace: 'nowrap'
+            }}
+          >
+            {isUnlockingCb ? 'Entsperre...' : '🔓 Jetzt entsperren'}
+          </button>
         </div>
       )}
 

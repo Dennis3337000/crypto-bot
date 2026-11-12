@@ -246,12 +246,21 @@ def get_bot_status(price_provider_func=None) -> Dict[str, Any]:
     total_margin_spent = sum(float(p.get("margin_spent", p.get("quote_spent", 0.0))) for p in positions)
     total_unrealized_pnl = sum(float(p.get("unrealized_pnl_usdt", 0.0)) for p in positions)
     positions_value = round(total_margin_spent + total_unrealized_pnl, 2)
-    
+
+    # Berechne heutigen Netto-PnL fuer Circuit Breaker
+    now_struct = time.localtime()
+    midnight_today = int(time.mktime((now_struct.tm_year, now_struct.tm_mon, now_struct.tm_mday, 0, 0, 0, 0, 0, -1)))
+    today_trades = [t for t in journal if t.get("closed_at", 0) >= midnight_today]
+    today_net_pnl = sum(float(t.get("pnl_usdt", 0.0)) for t in today_trades)
+
     # Was noch uebrig ist vom Bot-Budget (Startkapital abzueglich gebundener Margin)
     usdt_remaining = round(max(0.0, initial_capital - total_margin_spent), 2)
     # Gesamtkapital: Startkapital + realisierter Gewinn + schwebender Floating PnL
     total_capital = round(initial_capital + total_pnl + total_unrealized_pnl, 2)
     capital_growth_pct = round(((total_pnl + total_unrealized_pnl) / initial_capital) * 100, 2) if initial_capital > 0 else 0.0
+
+    limit = float(cfg.get("max_daily_loss_usdt", 200.0))
+    is_cb_active = bool(cfg.get("enable_circuit_breaker", True) and today_net_pnl <= -limit and CIRCUIT_BREAKER_OVERRIDE_DAY != time.strftime("%Y-%m-%d"))
 
     return {
         "bot_active": cfg.get("enabled", True),
@@ -268,6 +277,9 @@ def get_bot_status(price_provider_func=None) -> Dict[str, Any]:
         "total_trades": total_trades,
         "win_rate_pct": win_rate,
         "total_pnl_usdt": round(total_pnl, 2),
+        "today_net_pnl": round(today_net_pnl, 2),
+        "circuit_breaker_active": is_cb_active,
+        "daily_loss_limit": limit,
         "last_scan_time": LAST_SCAN_TIME,
         "recent_logs": BOT_LOGS[:15]
     }
@@ -625,20 +637,30 @@ def check_open_positions_lifecycle(get_current_price_func, analysis_func, proxie
     save_positions(updated_positions)
 
 LAST_CIRCUIT_BREAKER_ALERT_DAY: str = ""
+CIRCUIT_BREAKER_OVERRIDE_DAY: str = ""
+
+def unlock_circuit_breaker():
+    """Entsperrt den Circuit Breaker fuer den heutigen Tag manuell."""
+    global CIRCUIT_BREAKER_OVERRIDE_DAY
+    CIRCUIT_BREAKER_OVERRIDE_DAY = time.strftime("%Y-%m-%d")
+    add_bot_log("INFO", "Circuit Breaker wurde fuer heute manuell entsperrt. Trading laeuft weiter.")
 
 def check_circuit_breaker(cfg: Dict[str, Any], proxies: Optional[Dict[str, str]] = None) -> bool:
     """Prueft, ob die Tagesverlust-Bremse ausgeloest wurde (True = Stoppt neue Trades)."""
-    global LAST_CIRCUIT_BREAKER_ALERT_DAY
+    global LAST_CIRCUIT_BREAKER_ALERT_DAY, CIRCUIT_BREAKER_OVERRIDE_DAY
     if not cfg.get("enable_circuit_breaker", True):
         return False
 
-    limit = float(cfg.get("max_daily_loss_usdt", 150.0))
+    today_str = time.strftime("%Y-%m-%d")
+    if CIRCUIT_BREAKER_OVERRIDE_DAY == today_str:
+        return False
+
+    limit = float(cfg.get("max_daily_loss_usdt", 200.0))
     journal = load_journal()
 
     # Berechne realisierten Verlust seit Mitternacht
     now_struct = time.localtime()
     midnight_today = int(time.mktime((now_struct.tm_year, now_struct.tm_mon, now_struct.tm_mday, 0, 0, 0, 0, 0, -1)))
-    today_str = time.strftime("%Y-%m-%d")
 
     today_trades = [t for t in journal if t.get("closed_at", 0) >= midnight_today]
     # Netto-Tagesergebnis: Gewinne gleichen Verluste aus

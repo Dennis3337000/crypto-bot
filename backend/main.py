@@ -927,6 +927,13 @@ def test_telegram_api(request: Request) -> Dict[str, Any]:
     )
     return {"success": True, "message": "Telegram Test-Nachricht wurde ausgeloest."}
 
+@app.post("/api/bot/circuit-breaker/unlock")
+def unlock_circuit_breaker_api(request: Request) -> Dict[str, Any]:
+    """Entsperrt den Circuit Breaker fuer den heutigen Tag manuell."""
+    verify_auth_header(request)
+    bot_engine.unlock_circuit_breaker()
+    return {"success": True, "message": "Circuit Breaker wurde fuer heute erfolgreich entsperrt."}
+
 # --- STATISCHES FRONTEND SERVING (Fuer 1-Container Cloud Deployments) ---
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
