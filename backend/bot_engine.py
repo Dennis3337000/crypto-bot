@@ -2,6 +2,7 @@ import os
 import json
 import time
 import threading
+import secrets
 from typing import Dict, Any, List, Optional
 import binance_trader
 
@@ -218,10 +219,10 @@ def get_bot_status(price_provider_func=None) -> Dict[str, Any]:
     
     # Was noch uebrig ist vom Bot-Budget (Startkapital abzueglich gebundener Margin)
     usdt_remaining = round(max(0.0, initial_capital - total_margin_spent), 2)
-    # Gesamtkapital: Nur was noch uebrig ist ("usdt_remaining") plus was der Bot bisher verdient hat ("total_pnl")
-    total_capital = round(usdt_remaining + total_pnl, 2)
-    capital_growth_pct = round((total_pnl / initial_capital) * 100, 2) if initial_capital > 0 else 0.0
-    
+    # Gesamtkapital: Startkapital + realisierter Gewinn + schwebender Floating PnL
+    total_capital = round(initial_capital + total_pnl + total_unrealized_pnl, 2)
+    capital_growth_pct = round(((total_pnl + total_unrealized_pnl) / initial_capital) * 100, 2) if initial_capital > 0 else 0.0
+
     return {
         "bot_active": cfg.get("enabled", True),
         "worker_running": BOT_RUNNING,
@@ -241,6 +242,19 @@ def get_bot_status(price_provider_func=None) -> Dict[str, Any]:
         "recent_logs": BOT_LOGS[:15]
     }
 
+def smart_round(val: float, ref_price: float = 1.0) -> float:
+    """Rundet Kurswerte abhaengig von der Groessenordnung des Coins fuer maximale Praezision."""
+    if ref_price >= 100:
+        return round(val, 2)
+    elif ref_price >= 1:
+        return round(val, 3)
+    elif ref_price >= 0.01:
+        return round(val, 4)
+    elif ref_price >= 0.0001:
+        return round(val, 6)
+    else:
+        return round(val, 8)
+
 def get_spot_sell_quantity(symbol: str, raw_qty: float, proxies: Optional[Dict[str, str]] = None) -> float:
     """Ermittelt die exakte verfuegbare und lot-size konforme Verkaufsmenge im Binance Spot Wallet."""
     try:
@@ -252,21 +266,25 @@ def get_spot_sell_quantity(symbol: str, raw_qty: float, proxies: Optional[Dict[s
                 if b.get("asset") == base_asset:
                     real_free = float(b.get("free", 0.0))
                     break
-                    
+
         # Falls raw_qty groesser als real_free ist (z.B. durch Hebel-Multiplikator), nimm real_free
         sell_qty = min(raw_qty, real_free) if (raw_qty > 0 and raw_qty <= real_free) else real_free
-        
-        # Lot-Size Dezimalstellen gemaess Binance Spezifikation runden
+
+        # Exakte Lot-Size Dezimalstellen gemaess verifizierter Binance Spezifikation
         sym_upper = symbol.upper()
         if sym_upper in ["BTCUSDT"]:
             return round(sell_qty, 4)
         elif sym_upper in ["ETHUSDT"]:
             return round(sell_qty, 3)
-        elif sym_upper in ["SOLUSDT", "LINKUSDT", "AVAXUSDT", "SUIUSDT", "NEARUSDT"]:
+        elif sym_upper in ["BNBUSDT", "SOLUSDT"]:
+            return round(sell_qty, 3)
+        elif sym_upper in ["LINKUSDT", "AVAXUSDT"]:
             return round(sell_qty, 2)
-        elif sym_upper in ["XRPUSDT", "ADAUSDT", "DOGEUSDT", "PEPEUSDT"]:
+        elif sym_upper in ["SUIUSDT", "NEARUSDT", "ADAUSDT", "XRPUSDT"]:
+            return round(sell_qty, 1)
+        elif sym_upper in ["DOGEUSDT", "PEPEUSDT"]:
             return float(int(sell_qty))
-            
+
         return round(sell_qty, 2)
     except Exception:
         return 0.0
@@ -329,8 +347,8 @@ def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[
         "side": "LONG",
         "leverage": leverage,
         "margin_spent": margin_spent,
-        "entry_price": float(pos.get("entry_price", entry_price)),
-        "exit_price": round(avg_exit_price, 4),
+        "entry_price": smart_round(entry_price, entry_price),
+        "exit_price": smart_round(avg_exit_price, avg_exit_price),
         "qty": executed_qty,
         "quote_spent": margin_spent,
         "quote_received": quote_received,
@@ -655,30 +673,43 @@ def scan_and_open_new_trades(analysis_func, best_pick_func, proxies: Optional[Di
                     try:
                         analysis = analysis_func(sym)
                         setup = analysis.get("trade_setup", {})
-                        sl_val = setup.get("stop_loss", avg_price * 0.985)
-                        tp1_val = setup.get("take_profit_1", avg_price * 1.025)
-                        tp2_val = setup.get("take_profit_2", avg_price * 1.055)
+                        sl_val = float(setup.get("stop_loss", avg_price * 0.985))
+                        tp1_val = float(setup.get("take_profit_1", avg_price * 1.025))
+                        tp2_val = float(setup.get("take_profit_2", avg_price * 1.055))
                     except Exception:
-                        sl_val = round(avg_price * 0.985, 4)
-                        tp1_val = round(avg_price * 1.025, 4)
-                        tp2_val = round(avg_price * 1.055, 4)
-                        
+                        sl_val = avg_price * 0.985
+                        tp1_val = avg_price * 1.025
+                        tp2_val = avg_price * 1.055
+
+                    # Sanity-Pruefung: SL MUSS unter avg_price liegen, TP MUSS darueber liegen!
+                    if sl_val >= avg_price or sl_val <= 0:
+                        sl_val = avg_price * 0.985
+                    if tp1_val <= avg_price:
+                        tp1_val = avg_price * 1.025
+                    if tp2_val <= tp1_val:
+                        tp2_val = avg_price * 1.055
+
+                    sl_val = smart_round(sl_val, avg_price)
+                    tp1_val = smart_round(tp1_val, avg_price)
+                    tp2_val = smart_round(tp2_val, avg_price)
+
                     sl_dist_pct = abs((avg_price - sl_val) / avg_price) * 100 if avg_price > 0 else 2.0
                     leverage = calculate_ai_leverage(score, sl_dist_pct, cfg)
                     notional_val = actual_spent * leverage
                     leveraged_qty = round(executed_qty * leverage, 5)
-                    liq_price = round(avg_price * (1.0 - (0.88 / leverage)), 4) if leverage > 1 else round(avg_price * 0.5, 4)
-                    
+                    liq_price = smart_round(avg_price * (1.0 - (0.88 / leverage)), avg_price) if leverage > 1 else smart_round(avg_price * 0.5, avg_price)
+                    clean_entry = smart_round(avg_price, avg_price)
+
                     new_pos = {
-                        "id": f"pos_{int(time.time() * 1000)}_{coin}",
+                        "id": f"pos_{int(time.time() * 1000)}_{coin}_{secrets.token_hex(3)}",
                         "symbol": sym,
                         "coin": coin,
                         "side": "LONG",
                         "leverage": leverage,
                         "margin_spent": round(actual_spent, 2),
                         "notional_value": round(notional_val, 2),
-                        "entry_price": round(avg_price, 4),
-                        "current_price": round(avg_price, 4),
+                        "entry_price": clean_entry,
+                        "current_price": clean_entry,
                         "qty": leveraged_qty,
                         "actual_qty": executed_qty,
                         "quote_spent": round(actual_spent, 2),

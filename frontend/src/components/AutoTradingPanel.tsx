@@ -460,11 +460,11 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
                       </div>
                       <div>
                         <span className="pos-dim">Margin (Einsatz):</span>
-                        <strong>${(pos.margin_spent || pos.quote_spent).toFixed(2)} USDT</strong>
+                        <strong>${(pos.margin_spent || pos.quote_spent || 0).toFixed(2)} USDT</strong>
                       </div>
                       <div>
                         <span className="pos-dim">Kaufkraft ({pos.leverage || 1}x):</span>
-                        <strong className="text-cyan">${(pos.notional_value || ((pos.margin_spent || pos.quote_spent) * (pos.leverage || 1))).toFixed(2)} USDT</strong>
+                        <strong className="text-cyan">${(pos.notional_value || ((pos.margin_spent || pos.quote_spent || 0) * (pos.leverage || 1))).toFixed(2)} USDT</strong>
                       </div>
                       <div>
                         <span className="pos-dim">Stop-Loss:</span>
@@ -522,7 +522,7 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
                       <td><strong>{t.coin}</strong></td>
                       <td>${formatPrice(t.entry_price)}</td>
                       <td>${formatPrice(t.exit_price)}</td>
-                      <td>${t.quote_spent.toFixed(2)} USDT</td>
+                      <td>${(t.quote_spent ?? t.margin_spent ?? 0).toFixed(2)} USDT</td>
                       <td>
                         <strong className={t.pnl_usdt >= 0 ? 'text-green' : 'text-red'}>
                           {t.pnl_usdt >= 0 ? '+' : ''}${t.pnl_usdt.toFixed(2)} ({t.roi_pct >= 0 ? '+' : ''}{t.roi_pct}%)
