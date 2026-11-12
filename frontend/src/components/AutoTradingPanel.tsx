@@ -46,6 +46,13 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
   const [isEmergencyStopping, setIsEmergencyStopping] = useState<boolean>(false);
   const [isTestingTelegram, setIsTestingTelegram] = useState<boolean>(false);
   const [isUnlockingCb, setIsUnlockingCb] = useState<boolean>(false);
+  const [maxPositions, setMaxPositions] = useState<number>(propServerBot?.config?.max_open_positions || 8);
+
+  const handleMaxPositionsChange = async (newMax: number) => {
+    setMaxPositions(newMax);
+    await updateServerBotConfig({ max_open_positions: newMax });
+    refreshAll();
+  };
 
   const handleUnlockCircuitBreaker = async () => {
     setIsUnlockingCb(true);
@@ -160,6 +167,9 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
       if (propServerBot.config?.order_size_usdt) {
         setOrderSizeUsdt(propServerBot.config.order_size_usdt);
       }
+      if (propServerBot.config?.max_open_positions) {
+        setMaxPositions(propServerBot.config.max_open_positions);
+      }
     }
   }, [propServerBot]);
 
@@ -173,6 +183,9 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
         setLocalServerBot(srvStatus);
         if (srvStatus.config?.order_size_usdt) {
           setOrderSizeUsdt(srvStatus.config.order_size_usdt);
+        }
+        if (srvStatus.config?.max_open_positions) {
+          setMaxPositions(srvStatus.config.max_open_positions);
         }
       }
       setJournal(jrn);
@@ -569,6 +582,28 @@ export const AutoTradingPanel: React.FC<AutoTradingPanelProps> = ({
             {(serverBot?.config?.leverage_mode || 'AI_DYNAMIC') === 'AI_DYNAMIC'
               ? 'KI wählt Hebel (5x bis 100x) autonom anhand von Setup-Score & Stop-Loss-Distanz.'
               : `Fester Hebel: ${serverBot?.config?.default_leverage || 20}x aktiv.`}
+          </div>
+        </div>
+
+        {/* 4. Max. gleichzeitige Positionen */}
+        <div className="control-card">
+          <div className="control-label">Max. gleichzeitige Trades:</div>
+          <div className="amount-chips">
+            {[2, 4, 6, 8, 10].map((num) => {
+              const currentMax = serverBot?.config?.max_open_positions || maxPositions;
+              return (
+                <button
+                  key={num}
+                  onClick={() => handleMaxPositionsChange(num)}
+                  className={`amt-chip ${currentMax === num ? 'selected' : ''}`}
+                >
+                  {num} Trades
+                </button>
+              );
+            })}
+          </div>
+          <div className="control-sub">
+            Legt fest, wie viele Coins der 24/7 Autopilot maximal gleichzeitig im Portfolio hält.
           </div>
         </div>
 
