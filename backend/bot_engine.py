@@ -677,7 +677,7 @@ def check_circuit_breaker(cfg: Dict[str, Any], proxies: Optional[Dict[str, str]]
 
     return False
 
-def scan_and_open_new_trades(analysis_func, best_pick_func, proxies: Optional[Dict[str, str]] = None):
+def scan_and_open_new_trades(analysis_func, best_pick_func, btc_regime_func=None, proxies: Optional[Dict[str, str]] = None):
     """Scannt parallel alle Coins und eroeffnet mehrere Positionen gleichzeitig bei A+ Setups."""
     cfg = load_config()
     if not cfg.get("enabled", True):
@@ -686,6 +686,13 @@ def scan_and_open_new_trades(analysis_func, best_pick_func, proxies: Optional[Di
     # 1. Sicherheitspruefung: Tagesverlust-Bremse
     if check_circuit_breaker(cfg, proxies=proxies):
         return
+
+    # 2. Sicherheitspruefung: Bitcoin-Makro-Trendwaechter
+    if btc_regime_func:
+        btc_regime = btc_regime_func()
+        if not btc_regime.get("allow_altcoin_buys", True):
+            add_bot_log("INFO", f"Marktwaechter: {btc_regime.get('reason')} - Neukaeufe zum Schutz vor fallenden Messern pausiert.")
+            return
 
     positions = load_positions()
     max_pos = int(cfg.get("max_open_positions", 8))
@@ -886,12 +893,12 @@ def scan_and_open_new_trades(analysis_func, best_pick_func, proxies: Optional[Di
     except Exception as e:
         add_bot_log("ERROR", f"Fehler bei Multi-Coin Markt-Scan: {str(e)}")
 
-def run_bot_loop(get_price_func, analysis_func, best_pick_func, proxies: Optional[Dict[str, str]] = None):
+def run_bot_loop(get_price_func, analysis_func, best_pick_func, btc_regime_func=None, proxies: Optional[Dict[str, str]] = None):
     """Endlosschleife des 24/7 Trading Bots."""
     global BOT_RUNNING, LAST_SCAN_TIME
     BOT_RUNNING = True
     add_bot_log("INFO", "24/7 Autonomer Trading-Bot Dienst gestartet.")
-    
+
     while BOT_RUNNING:
         try:
             cfg = load_config()
@@ -904,27 +911,27 @@ def run_bot_loop(get_price_func, analysis_func, best_pick_func, proxies: Optiona
                         update_cached_usdt(bal.get("usdt_free", 0.0))
                 except Exception:
                     pass
-                    
+
                 # 1. Offene Positionen pruefen (SL/TP und Smart DCA Nachkaeufe)
                 check_open_positions_lifecycle(get_price_func, analysis_func, proxies=proxies)
-                # 2. Neue Einstiege pruefen
-                scan_and_open_new_trades(analysis_func, best_pick_func, proxies=proxies)
-                
+                # 2. Neue Einstiege pruefen (mit BTC-Makro-Waechter)
+                scan_and_open_new_trades(analysis_func, best_pick_func, btc_regime_func=btc_regime_func, proxies=proxies)
+
             interval = max(10, int(cfg.get("scan_interval_seconds", 30)))
             time.sleep(interval)
         except Exception as e:
             add_bot_log("ERROR", f"Fehler in Bot-Loop: {str(e)}")
             time.sleep(15)
 
-def start_bot_background(get_price_func, analysis_func, best_pick_func, proxies: Optional[Dict[str, str]] = None):
+def start_bot_background(get_price_func, analysis_func, best_pick_func, btc_regime_func=None, proxies: Optional[Dict[str, str]] = None):
     """Startet den Bot-Thread falls er noch nicht laeuft."""
     global BOT_THREAD, BOT_RUNNING
     if BOT_THREAD and BOT_THREAD.is_alive():
         return
-        
+
     BOT_THREAD = threading.Thread(
         target=run_bot_loop,
-        args=(get_price_func, analysis_func, best_pick_func, proxies),
+        args=(get_price_func, analysis_func, best_pick_func, btc_regime_func, proxies),
         daemon=True,
         name="CryptoAnalyzer-247-Bot"
     )

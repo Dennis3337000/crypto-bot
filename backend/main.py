@@ -130,6 +130,96 @@ def calculate_rsi(closes: List[float], period: int = 14) -> float:
     rs = avg_gain / avg_loss
     return round(100.0 - (100.0 / (1.0 + rs)), 2)
 
+def calculate_ema(closes: List[float], period: int) -> float:
+    """Berechnet den Exponential Moving Average (EMA)."""
+    if not closes:
+        return 0.0
+    if len(closes) < period:
+        return closes[-1]
+    multiplier = 2.0 / (period + 1.0)
+    ema = sum(closes[:period]) / period
+    for price in closes[period:]:
+        ema = (price - ema) * multiplier + ema
+    return ema
+
+BTC_REGIME_CACHE: Dict[str, Any] = {"timestamp": 0, "data": None}
+
+def get_btc_market_regime() -> Dict[str, Any]:
+    """
+    Analysiert den Gesamtzustand des Krypto-Marktes anhand von Bitcoin (BTCUSDT).
+    Entscheidet, ob Altcoin-Dip-Kaeufe erlaubt sind oder ein generelles Kaufverbot herrscht.
+    """
+    global BTC_REGIME_CACHE
+    now = time.time()
+    if BTC_REGIME_CACHE["data"] and (now - BTC_REGIME_CACHE["timestamp"] < 30):
+        return BTC_REGIME_CACHE["data"]
+
+    try:
+        klines_1h = binance_get("/api/v3/klines", {"symbol": "BTCUSDT", "interval": "1h", "limit": 48})
+        klines_15m = binance_get("/api/v3/klines", {"symbol": "BTCUSDT", "interval": "15m", "limit": 20})
+
+        closes_1h = [float(k[4]) for k in klines_1h]
+        closes_15m = [float(k[4]) for k in klines_15m]
+        opens_15m = [float(k[1]) for k in klines_15m]
+
+        btc_price = closes_15m[-1]
+        btc_rsi_15m = calculate_rsi(closes_15m, 14)
+        btc_rsi_1h = calculate_rsi(closes_1h, 14)
+        btc_ema_20_1h = calculate_ema(closes_1h, 20)
+        btc_ema_50_1h = calculate_ema(closes_1h, 50)
+
+        # 1h und 4h Preisaenderung von BTC
+        change_1h_pct = ((closes_1h[-1] - closes_1h[-2]) / closes_1h[-2]) * 100 if len(closes_1h) >= 2 else 0.0
+        change_4h_pct = ((closes_1h[-1] - closes_1h[-5]) / closes_1h[-5]) * 100 if len(closes_1h) >= 5 else 0.0
+
+        # Die letzten 3 15m Kerzen pruefen (wie viele waren rot)
+        recent_15m_red = sum(1 for i in range(-3, 0) if closes_15m[i] < opens_15m[i])
+
+        is_crash_event = change_1h_pct <= -1.2 or change_4h_pct <= -2.5
+        is_downtrend = btc_price < btc_ema_20_1h and btc_price < btc_ema_50_1h
+        is_dumping = is_downtrend and (recent_15m_red >= 2 or btc_rsi_15m < 38)
+
+        allow_buys = True
+        status = "BULLISH"
+        reason = "BTC stabil / im Aufwaertstrend"
+
+        if is_crash_event:
+            allow_buys = False
+            status = "CRASH_FLUSH"
+            reason = f"BTC im Schock-Abverkauf ({change_1h_pct:.2f}% in 1h, {change_4h_pct:.2f}% in 4h) - Altcoin-Kaeufe gesperrt!"
+        elif is_dumping:
+            allow_buys = False
+            status = "BEARISH_DUMP"
+            reason = f"BTC im aktiven Abwaertstrend unter EMA20 (${btc_ema_20_1h:.0f}) & EMA50 (${btc_ema_50_1h:.0f}) mit fallendem Momentum"
+        elif is_downtrend:
+            status = "WEAK_RANGE"
+            reason = "BTC konsolidiert unter Trendlinie - nur strenge A+ Reversals erlaubt"
+
+        regime_data = {
+            "btc_price": btc_price,
+            "btc_rsi_15m": round(btc_rsi_15m, 1),
+            "btc_rsi_1h": round(btc_rsi_1h, 1),
+            "change_1h_pct": round(change_1h_pct, 2),
+            "change_4h_pct": round(change_4h_pct, 2),
+            "status": status,
+            "allow_altcoin_buys": allow_buys,
+            "reason": reason
+        }
+        BTC_REGIME_CACHE = {"timestamp": now, "data": regime_data}
+        return regime_data
+    except Exception as e:
+        return {
+            "btc_price": 0.0,
+            "status": "NEUTRAL",
+            "allow_altcoin_buys": True,
+            "reason": f"BTC Regime Check Fallback: {str(e)}"
+        }
+
+@app.get("/api/market/btc-regime")
+def get_btc_regime_api() -> Dict[str, Any]:
+    """Liefert den aktuellen Makro-Zustand des Krypto-Marktes (BTC-Waechter)."""
+    return get_btc_market_regime()
+
 @app.get("/api/health")
 def get_health() -> Dict[str, Any]:
     return {"status": "ok", "proxy_active": bool(PROXIES), "timestamp": time.time()}
@@ -324,20 +414,53 @@ def get_trading_analysis(symbol: str = "BTCUSDT") -> Dict[str, Any]:
     take_profit_2 = smart_round(resistance_1 * 0.995, current_price)
     confidence = "8/10"
     rationale = f"Kurs konsolidiert in der Range-Mitte ({range_position_pct}%). Nicht ueber Marktpreise kaufen, sondern Kauflimits in der Kauf-Range ({buy_range_label}) staffeln (Abstand: +{distance_to_buy_pct}%)."
-    
+
+    # Reversal-Bestaetigung: Keine Kaeufe in fallende Messer!
+    curr_open = float(klines_15m[-1][1])
+    curr_close = closes_15m[-1]
+    prev_open = float(klines_15m[-2][1])
+    prev_close = closes_15m[-2]
+
+    is_candle_green = curr_close >= curr_open
+    is_prev_candle_green = prev_close >= prev_open
+    has_bounce = is_candle_green or is_prev_candle_green
+
+    # Pruefe uebergeordneten BTC-Trend wenn Altcoin
+    btc_regime = get_btc_market_regime()
+    btc_ok = btc_regime.get("allow_altcoin_buys", True) or sym == "BTCUSDT"
+
     if (range_position_pct <= 33 or distance_to_sup_pct <= 2.2) and rsi_15m <= 44:
-        signal = "BUY"
-        signal_label = "KAUFEN (DIP-REVERSAL)"
-        setup_type = "Support-Bounce / Oversold Dip-Kauf"
-        entry_target = smart_round(current_price, current_price)
-        entry_min = buy_range_min
-        entry_max = smart_round(max(current_price, buy_range_max), current_price)
-        stop_loss = smart_round(support_1 * 0.991, current_price)
-        take_profit_1 = smart_round(support_1 + (range_span * 0.55), current_price)
-        take_profit_2 = smart_round(resistance_1 * 0.995, current_price)
-        confidence = "9/10"
-        rationale = f"Kurs notiert mit {range_position_pct}% direkt in der optimalen Kauf-Range ({buy_range_label}). RSI 15m ({rsi_15m}) zeigt ideales Reversal-Niveau mit starkem CRV."
-    elif range_position_pct <= 35 and rsi_15m <= 58:
+        if not btc_ok:
+            signal = "WAIT"
+            signal_label = "WARTEN (BTC ABVERKAUF)"
+            setup_type = "Marktweiter Stop wegen Bitcoin-Druck"
+            confidence = "6/10"
+            rationale = f"Coin waere zwar im Dip ({range_position_pct}%), aber Bitcoin faellt aktuell scharf ab ({btc_regime.get('reason')}). Generelles Kaufverbot zum Schutz vor fallenden Messern!"
+        elif has_bounce:
+            signal = "BUY"
+            signal_label = "KAUFEN (REVERSAL BESTAETIGT)"
+            setup_type = "Support-Bounce / Oversold Dip-Kauf"
+            entry_target = smart_round(current_price, current_price)
+            entry_min = buy_range_min
+            entry_max = smart_round(max(current_price, buy_range_max), current_price)
+            stop_loss = smart_round(support_1 * 0.991, current_price)
+            take_profit_1 = smart_round(support_1 + (range_span * 0.55), current_price)
+            take_profit_2 = smart_round(resistance_1 * 0.995, current_price)
+            confidence = "9/10"
+            rationale = f"Kurs notiert mit {range_position_pct}% in der Kauf-Range ({buy_range_label}) und Reversal ist durch gruene Kerze bestaetigt. BTC ist stabil. RSI 15m ({rsi_15m}) zeigt starkes CRV."
+        else:
+            signal = "WAIT"
+            signal_label = "WARTEN (MESSER FAELLT NOCH)"
+            setup_type = "Warten auf Kerzen-Umkehr"
+            entry_target = smart_round(support_1, current_price)
+            entry_min = buy_range_min
+            entry_max = buy_range_max
+            stop_loss = smart_round(support_1 * 0.991, current_price)
+            take_profit_1 = smart_round(support_1 + (range_span * 0.55), current_price)
+            take_profit_2 = smart_round(resistance_1 * 0.995, current_price)
+            confidence = "7/10"
+            rationale = f"Kurs hat die Kauf-Range erreicht ({range_position_pct}%), aber die 15m-Kerzen fallen noch ohne Kaeufer (Messer faellt). Erst einsteigen wenn die erste gruene Reversal-Kerze schliesst!"
+    elif range_position_pct <= 35 and rsi_15m <= 50 and has_bounce and btc_ok:
         signal = "BUY"
         signal_label = "KAUFEN (AKKUMULATIONS-ZONE)"
         setup_type = "Range-Bottom Akkumulation"
@@ -348,8 +471,8 @@ def get_trading_analysis(symbol: str = "BTCUSDT") -> Dict[str, Any]:
         take_profit_1 = smart_round(support_1 + (range_span * 0.55), current_price)
         take_profit_2 = smart_round(resistance_1 * 0.995, current_price)
         confidence = "8/10"
-        rationale = f"Kurs befindet sich im unteren Drittel der Handelsspanne ({range_position_pct}% vom Support). Sehr guenstiges Niveau zur Akkumulation vor dem naechsten Impuls."
-    elif current_price >= (resistance_1 * 0.988) and rsi_15m >= 56 and rsi_1h >= 50:
+        rationale = f"Kurs befindet sich im unteren Drittel der Handelsspanne ({range_position_pct}% vom Support) und Kaeufer stabilisieren den Boden. BTC ist stabil."
+    elif current_price >= (resistance_1 * 0.988) and rsi_15m >= 56 and rsi_1h >= 50 and btc_ok:
         signal = "BUY"
         signal_label = "KAUFEN (BREAKOUT-MOMENTUM)"
         setup_type = "Widerstands-Ausbruch / Trendfolge"
@@ -360,7 +483,7 @@ def get_trading_analysis(symbol: str = "BTCUSDT") -> Dict[str, Any]:
         take_profit_1 = smart_round(resistance_1 * 1.025, current_price)
         take_profit_2 = smart_round(resistance_1 * 1.055, current_price)
         confidence = "8/10"
-        rationale = f"Kurs bricht dynamisch an der oberen Range-Kante aus (RSI 15m: {rsi_15m}). Starkes Momentum; Trendfolge-Kauf mit engem Stop unter Ausbruchskante."
+        rationale = f"Kurs bricht dynamisch an der oberen Range-Kante aus (RSI 15m: {rsi_15m}). BTC unterstuetzt den Ausbruch. Trendfolge-Kauf mit engem Stop."
     elif range_position_pct >= 72 or (rsi_15m >= 68 and distance_to_res_pct < 2.0):
         signal = "SELL"
         signal_label = "GEWINNMITNAHME / WIDERSTAND"
@@ -784,6 +907,7 @@ def startup_event():
             get_price_func=get_coin_current_price,
             analysis_func=get_trading_analysis,
             best_pick_func=get_best_buy_pick,
+            btc_regime_func=get_btc_market_regime,
             proxies=PROXIES
         )
 
@@ -870,6 +994,7 @@ def toggle_bot_api(payload: Dict[str, Any], request: Request) -> Dict[str, Any]:
             get_price_func=get_coin_current_price,
             analysis_func=get_trading_analysis,
             best_pick_func=get_best_buy_pick,
+            btc_regime_func=get_btc_market_regime,
             proxies=PROXIES
         )
     else:
