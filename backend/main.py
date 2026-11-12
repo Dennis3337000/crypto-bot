@@ -720,7 +720,7 @@ def get_relevant_prices() -> Dict[str, float]:
 
     symbols = get_relevant_symbols()
     try:
-        symbols_json = json.dumps(symbols)
+        symbols_json = json.dumps(symbols, separators=(',', ':'))
         url = f"https://api.binance.com/api/v3/ticker/price?symbols={urllib.parse.quote(symbols_json)}"
         kwargs: Dict[str, Any] = {"timeout": 6}
         if PROXIES:
