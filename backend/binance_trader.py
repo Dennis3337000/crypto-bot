@@ -6,8 +6,8 @@ import urllib.parse
 from typing import Dict, Any, List, Optional
 import requests
 
-TESTNET_BASE_URL = "https://testnet.binance.vision"
-MAINNET_BASE_URL = "https://api.binance.com"
+TESTNET_BASE_URL = "https://testnet.binancefuture.com"
+MAINNET_BASE_URL = "https://fapi.binance.com"
 
 def get_env_config() -> Dict[str, str]:
     """Liest die lokale .env Datei im backend Ordner ein."""
@@ -135,23 +135,23 @@ def get_account_balance(proxies: Optional[Dict[str, str]] = None, force_refresh:
     if not force_refresh and BALANCE_CACHE["data"] and (now - BALANCE_CACHE["timestamp"] < 4.0):
         return BALANCE_CACHE["data"]
         
-    res = binance_signed_request("GET", "/api/v3/account", proxies=proxies)
+    res = binance_signed_request("GET", "/fapi/v2/balance", proxies=proxies)
     if not res.get("success"):
         if BALANCE_CACHE["data"]:
             return BALANCE_CACHE["data"]
         return res
         
-    data = res["data"]
-    raw_balances = data.get("balances", [])
-    
-    # Filtere nur Assets mit Bestand > 0
+    raw_balances = res.get("data", [])
+    if isinstance(raw_balances, dict):
+        raw_balances = raw_balances.get("balances", [])
+
     active_balances = []
     usdt_free = 0.0
-    
+
     for b in raw_balances:
-        free = float(b.get("free", 0))
-        locked = float(b.get("locked", 0))
-        total = free + locked
+        free = float(b.get("availableBalance", b.get("free", 0)))
+        total = float(b.get("balance", b.get("total", 0)))
+        locked = total - free if total >= free else 0.0
         asset = b.get("asset", "")
         if total > 0.0000001:
             active_balances.append({
@@ -162,25 +162,39 @@ def get_account_balance(proxies: Optional[Dict[str, str]] = None, force_refresh:
             })
             if asset == "USDT":
                 usdt_free = free
-                
+
     result = {
         "success": True,
-        "can_trade": data.get("canTrade", False),
+        "can_trade": True,
         "usdt_free": usdt_free,
         "balances": active_balances,
-        "account_type": data.get("accountType", "SPOT")
+        "account_type": "FUTURES"
     }
     BALANCE_CACHE["timestamp"] = now
     BALANCE_CACHE["data"] = result
     return result
+
+def set_leverage(symbol: str, leverage: int, proxies: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    sym = symbol.upper().strip()
+    if not sym.endswith("USDT") and not sym.endswith("BUSD"):
+        sym += "USDT"
+    params = {"symbol": sym, "leverage": leverage}
+    return binance_signed_request("POST", "/fapi/v1/leverage", params=params, proxies=proxies)
+
+def set_margin_type(symbol: str, margin_type: str = "ISOLATED", proxies: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
+    sym = symbol.upper().strip()
+    if not sym.endswith("USDT") and not sym.endswith("BUSD"):
+        sym += "USDT"
+    params = {"symbol": sym, "marginType": margin_type}
+    return binance_signed_request("POST", "/fapi/v1/marginType", params=params, proxies=proxies)
 
 def create_order(
     symbol: str,
     side: str,
     order_type: str = "MARKET",
     quantity: Optional[float] = None,
-    quote_order_qty: Optional[float] = None,
     price: Optional[float] = None,
+    reduce_only: bool = False,
     proxies: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
     """Erstellt eine Kauf- oder Verkaufsorder im Testnet."""
@@ -188,34 +202,31 @@ def create_order(
     sym = symbol.upper().strip()
     if not sym.endswith("USDT") and not sym.endswith("BUSD"):
         sym = f"{sym}USDT"
-        
+
     params: Dict[str, Any] = {
         "symbol": sym,
         "side": side.upper(),
         "type": order_type.upper()
     }
-    
+    if reduce_only:
+        params["reduceOnly"] = "true"
+
     if order_type.upper() == "MARKET":
-        if quote_order_qty and quote_order_qty > 0:
-            params["quoteOrderQty"] = round(quote_order_qty, 2)
-        elif quantity and quantity > 0:
+        if quantity and quantity > 0:
             params["quantity"] = quantity
         else:
-            params["quoteOrderQty"] = 50.0
+            return {"success": False, "error": "Fuer Futures MARKET Orders ist quantity zwingend."}
     elif order_type.upper() == "LIMIT":
         if not price or price <= 0:
-            return {"success": False, "error": "Fuer LIMIT Orders ist ein gueltiger Preis erforderlich."}
+            return {"success": False, "error": "Fuer LIMIT Orders ist ein gueltiger Preis erforderlich."}       
         params["price"] = price
         params["timeInForce"] = "GTC"
         if quantity and quantity > 0:
             params["quantity"] = quantity
-        elif quote_order_qty and quote_order_qty > 0:
-            calc_qty = quote_order_qty / price
-            params["quantity"] = round(calc_qty, 4)
         else:
-            return {"success": False, "error": "Fuer LIMIT Orders muss eine Menge oder USDT-Wert angegeben werden."}
-        
-    res = binance_signed_request("POST", "/api/v3/order", params=params, proxies=proxies)
+            return {"success": False, "error": "Fuer LIMIT Orders muss eine Menge angegeben werden."}
+
+    res = binance_signed_request("POST", "/fapi/v1/order", params=params, proxies=proxies)
     return res
 
 def get_open_orders(symbol: Optional[str] = None, proxies: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
@@ -227,7 +238,7 @@ def get_open_orders(symbol: Optional[str] = None, proxies: Optional[Dict[str, st
             sym = f"{sym}USDT"
         params["symbol"] = sym
         
-    return binance_signed_request("GET", "/api/v3/openOrders", params=params, proxies=proxies)
+    return binance_signed_request("GET", "/fapi/v1/openOrders", params=params, proxies=proxies)
 
 def cancel_order(symbol: str, order_id: int, proxies: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     """Storniert eine offene Order."""
@@ -239,4 +250,4 @@ def cancel_order(symbol: str, order_id: int, proxies: Optional[Dict[str, str]] =
         "symbol": sym,
         "orderId": order_id
     }
-    return binance_signed_request("DELETE", "/api/v3/order", params=params, proxies=proxies)
+    return binance_signed_request("DELETE", "/fapi/v1/order", params=params, proxies=proxies)

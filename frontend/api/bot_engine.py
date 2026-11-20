@@ -193,11 +193,11 @@ def get_bot_status(price_provider_func=None) -> Dict[str, Any]:
     total_unrealized_pnl = sum(float(p.get("unrealized_pnl_usdt", 0.0)) for p in positions)
     positions_value = round(total_margin_spent + total_unrealized_pnl, 2)
     
-    # Was noch uebrig ist vom Bot-Budget (Startkapital abzueglich gebundener Margin)
-    usdt_remaining = round(max(0.0, initial_capital - total_margin_spent), 2)
-    # Gesamtkapital: Nur was noch uebrig ist ("usdt_remaining") plus was der Bot bisher verdient hat ("total_pnl")
-    total_capital = round(usdt_remaining + total_pnl, 2)
-    capital_growth_pct = round((total_pnl / initial_capital) * 100, 2) if initial_capital > 0 else 0.0
+    # Was noch uebrig ist vom Bot-Budget (Startkapital + realisierter Gewinn abzueglich gebundener Margin)
+    usdt_remaining = round(max(0.0, initial_capital + total_pnl - total_margin_spent), 2)
+    # Gesamtkapital (Portfolio Equity): Startkapital + realisierter Gewinn + schwebender Floating PnL
+    total_capital = round(initial_capital + total_pnl + total_unrealized_pnl, 2)
+    capital_growth_pct = round(((total_pnl + total_unrealized_pnl) / initial_capital) * 100, 2) if initial_capital > 0 else 0.0
     
     return {
         "bot_active": cfg.get("enabled", True),

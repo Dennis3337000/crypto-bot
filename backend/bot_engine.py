@@ -253,8 +253,8 @@ def get_bot_status(price_provider_func=None) -> Dict[str, Any]:
     today_trades = [t for t in journal if t.get("closed_at", 0) >= midnight_today]
     today_net_pnl = sum(float(t.get("pnl_usdt", 0.0)) for t in today_trades)
 
-    # Was noch uebrig ist vom Bot-Budget (Startkapital abzueglich gebundener Margin)
-    usdt_remaining = round(max(0.0, initial_capital - total_margin_spent), 2)
+    # Was noch uebrig ist vom Bot-Budget (Startkapital + realisierter Gewinn abzueglich gebundener Margin)
+    usdt_remaining = round(max(0.0, initial_capital + total_pnl - total_margin_spent), 2)
     # Gesamtkapital: Startkapital + realisierter Gewinn + schwebender Floating PnL
     total_capital = round(initial_capital + total_pnl + total_unrealized_pnl, 2)
     capital_growth_pct = round(((total_pnl + total_unrealized_pnl) / initial_capital) * 100, 2) if initial_capital > 0 else 0.0
@@ -345,15 +345,16 @@ def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[
     
     # Optionaler Spot-Verkauf auf Binance Testnet komplett asynchron im Hintergrund
     # (Damit das Schliessen im Dashboard IMMER in unter 5 Millisekunden reagiert!)
-    def _async_spot_cleanup(sym: str, raw_q: float, px: Optional[Dict[str, str]]):
+    def _async_futures_cleanup(sym: str, raw_q: float, side: str, px: Optional[Dict[str, str]]):
         try:
-            target_sell_qty = get_spot_sell_quantity(sym, raw_q, proxies=px)
-            if target_sell_qty > 0:
+            target_qty = round(raw_q, 3) # simplified rounding
+            if target_qty > 0:
                 binance_trader.create_order(
                     symbol=sym,
-                    side="SELL",
+                    side=side,
                     order_type="MARKET",
-                    quantity=target_sell_qty,
+                    quantity=target_qty,
+                    reduce_only=True,
                     proxies=px
                 )
         except Exception:
@@ -361,8 +362,8 @@ def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[
 
     if executed_qty > 0:
         threading.Thread(
-            target=_async_spot_cleanup,
-            args=(symbol, executed_qty, proxies),
+            target=_async_futures_cleanup,
+            args=(symbol, executed_qty, "BUY" if pos.get("side", "LONG") == "SHORT" else "SELL", proxies),
             daemon=True
         ).start()
             
@@ -372,7 +373,9 @@ def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[
 
     # Sanity-Check: Verhindere absurde PnL-Spikes durch fehlerhafte Test-Preise
     raw_diff = (avg_exit_price - entry_price) / entry_price if entry_price > 0 else 0.0
-    base_diff = max(-0.35, min(0.35, raw_diff))
+    if pos.get("side", "LONG") == "SHORT":
+        raw_diff = -raw_diff
+    base_diff = max(-1.0, min(10.0, raw_diff)) # allow bigger moves
 
     roi_pct = round(base_diff * 100 * leverage, 2)
     pnl_usdt = round(margin_spent * (base_diff * leverage), 2)
@@ -387,7 +390,7 @@ def close_active_position(pos_id: str, exit_reason: str, proxies: Optional[Dict[
         "id": pos_id,
         "symbol": symbol,
         "coin": pos.get("coin", symbol.replace("USDT", "")),
-        "side": "LONG",
+        "side": position_side,
         "leverage": leverage,
         "margin_spent": margin_spent,
         "entry_price": smart_round(entry_price, entry_price),
@@ -782,17 +785,48 @@ def scan_and_open_new_trades(analysis_func, best_pick_func, btc_regime_func=None
                 range_pos >= 60.0
             )
             
-            is_valid_entry = is_dip_entry or is_breakout_entry
+            # Setup-Typ C: Short Sell an Widerstand
+            is_short_entry = (
+                score >= min_score and
+                signal == "SELL" and
+                range_pos >= 68.0 and
+                cand_rsi >= 60.0
+            )
+            is_valid_entry = is_dip_entry or is_breakout_entry or is_short_entry
             
             if is_valid_entry:
                 add_bot_log("INFO", f"100% A+ Setup gefunden: {coin} (Score: {score}, Signal: {candidate.get('signal_label')}, Range: {range_pos}%, RSI: {cand_rsi})")
                 
                 # Kauforder ausfuehren
+                # Pro Trader Setup: Leverage & Shorts
+                try:
+                    analysis = analysis_func(sym)
+                    setup = analysis.get("trade_setup", {})
+                    avg_price = float(candidate.get("current_price", 1.0))
+                    sl_val = float(setup.get("stop_loss", avg_price * 0.985))
+                except Exception:
+                    avg_price = float(candidate.get("current_price", 1.0))
+                    sl_val = avg_price * 0.985
+
+                sl_dist_pct = abs((avg_price - sl_val) / avg_price) * 100 if avg_price > 0 else 2.0
+                leverage = calculate_ai_leverage(score, sl_dist_pct, cfg)
+                
+                trade_side = "SELL" if signal == "SELL" else "BUY"
+                position_side = "SHORT" if signal == "SELL" else "LONG"
+                
+                # Set Leverage and Margin
+                binance_trader.set_leverage(sym, leverage, proxies=proxies)
+                binance_trader.set_margin_type(sym, "ISOLATED", proxies=proxies)
+                
+                # Calculate Quantity in Base Asset
+                raw_qty = (order_size * leverage) / avg_price
+                target_qty = round(raw_qty, 3)
+
                 order_res = binance_trader.create_order(
                     symbol=sym,
-                    side="BUY",
+                    side=trade_side,
                     order_type="MARKET",
-                    quote_order_qty=order_size,
+                    quantity=target_qty,
                     proxies=proxies
                 )
                 
@@ -844,7 +878,7 @@ def scan_and_open_new_trades(analysis_func, best_pick_func, btc_regime_func=None
                         "id": f"pos_{int(time.time() * 1000)}_{coin}_{secrets.token_hex(3)}",
                         "symbol": sym,
                         "coin": coin,
-                        "side": "LONG",
+                        "side": position_side,
                         "leverage": leverage,
                         "margin_spent": round(actual_spent, 2),
                         "notional_value": round(notional_val, 2),

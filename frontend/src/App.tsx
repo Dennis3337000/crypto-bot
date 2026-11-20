@@ -111,15 +111,19 @@ export const App: React.FC = () => {
         const totalUnrealized = updatedPositions.reduce((sum, p) => sum + (p.unrealized_pnl_usdt || 0), 0);
         const posValue = Math.round((totalMargin + totalUnrealized) * 100) / 100;
         const initialCap = prev.initial_capital_usdt ?? 10000.0;
-        const remainingUsdt = Math.round(Math.max(0, initialCap - totalMargin) * 100) / 100;
-        const totalCap = Math.round((remainingUsdt + (prev.total_pnl_usdt || 0)) * 100) / 100;
+        const totalRealizedPnl = prev.total_pnl_usdt || 0;
+        const remainingUsdt = Math.round(Math.max(0, initialCap + totalRealizedPnl - totalMargin) * 100) / 100;
+        // Gesamtkapital (Portfolio Equity) = Startkapital + realisierter Gewinn + schwebender Floating PnL
+        const totalCap = Math.round((initialCap + totalRealizedPnl + totalUnrealized) * 100) / 100;
+        const growthPct = initialCap > 0 ? Math.round(((totalRealizedPnl + totalUnrealized) / initialCap) * 10000) / 100 : 0;
 
         return {
           ...prev,
           open_positions: updatedPositions,
           positions_value_usdt: posValue,
           usdt_free: remainingUsdt,
-          total_capital_usdt: totalCap
+          total_capital_usdt: totalCap,
+          capital_growth_pct: growthPct
         };
       });
     }, 3000);

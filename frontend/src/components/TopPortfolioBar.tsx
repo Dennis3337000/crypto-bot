@@ -22,15 +22,14 @@ export const TopPortfolioBar: React.FC<TopPortfolioBarProps> = ({
     (sum, p) => sum + (p.margin_spent || p.quote_spent || 0),
     0
   );
-  const usdtFree = serverBot?.usdt_free ?? Math.max(0, initialCap - totalMarginSpent);
-  const positionsValue = serverBot?.positions_value_usdt ?? totalMarginSpent;
-  const totalCapital = serverBot?.total_capital_usdt ?? Math.round((usdtFree + totalPnl) * 100) / 100;
-  const capitalGrowth = serverBot?.capital_growth_pct ?? (initialCap > 0 ? (totalPnl / initialCap) * 100 : 0);
-
   const totalFloatingPnl = openPositions.reduce(
     (sum, p) => sum + (p.unrealized_pnl_usdt || 0),
     0
   );
+  const usdtFree = serverBot?.usdt_free ?? Math.max(0, initialCap + totalPnl - totalMarginSpent);
+  const positionsValue = serverBot?.positions_value_usdt ?? Math.round((totalMarginSpent + totalFloatingPnl) * 100) / 100;
+  const totalCapital = serverBot?.total_capital_usdt ?? Math.round((initialCap + totalPnl + totalFloatingPnl) * 100) / 100;
+  const capitalGrowth = serverBot?.capital_growth_pct ?? (initialCap > 0 ? (((totalPnl + totalFloatingPnl) / initialCap) * 100) : 0);
 
   return (
     <div className="top-portfolio-bar">

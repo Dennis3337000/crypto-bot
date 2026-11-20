@@ -74,7 +74,7 @@ COINS_CATALOG = [
 
 def binance_get(endpoint: str, params: Optional[Dict[str, Any]] = None) -> Any:
     """Fuehrt GET-Request an die Binance API aus mit Proxy, Timeout und Cache-Purge."""
-    base_url = "https://api.binance.com"
+    base_url = "https://fapi.binance.com"
     url = f"{base_url}{endpoint}"
     cache_key = f"{endpoint}?{json.dumps(params, sort_keys=True)}"
     
@@ -142,6 +142,239 @@ def calculate_ema(closes: List[float], period: int) -> float:
         ema = (price - ema) * multiplier + ema
     return ema
 
+def calculate_atr(highs: List[float], lows: List[float], closes: List[float], period: int = 14) -> float:
+    """Berechnet den Average True Range (ATR) fuer dynamisches Risikomanagement."""
+    if len(closes) < 2:
+        return 0.0
+    tr_list = []
+    for i in range(1, len(closes)):
+        h = highs[i]
+        l = lows[i]
+        prev_c = closes[i - 1]
+        tr = max(h - l, abs(h - prev_c), abs(l - prev_c))
+        tr_list.append(tr)
+    if not tr_list:
+        return 0.0
+    if len(tr_list) < period:
+        return sum(tr_list) / len(tr_list)
+    atr = sum(tr_list[:period]) / period
+    for tr in tr_list[period:]:
+        atr = (atr * (period - 1) + tr) / period
+    return atr
+
+def calculate_macd(closes: List[float], fast: int = 12, slow: int = 26, signal_period: int = 9) -> Dict[str, Any]:
+    """Berechnet MACD-Linie, Signallinie und Histogramm fuer Trendfolge & Momentum."""
+    if len(closes) < slow + signal_period:
+        return {"macd": 0.0, "signal": 0.0, "hist": 0.0, "status": "NEUTRAL"}
+    
+    fast_multiplier = 2.0 / (fast + 1.0)
+    slow_multiplier = 2.0 / (slow + 1.0)
+    
+    fast_ema = sum(closes[:fast]) / fast
+    fast_emas = [fast_ema]
+    for p in closes[fast:]:
+        fast_ema = (p - fast_ema) * fast_multiplier + fast_ema
+        fast_emas.append(fast_ema)
+        
+    slow_ema = sum(closes[:slow]) / slow
+    slow_emas = [slow_ema]
+    for p in closes[slow:]:
+        slow_ema = (p - slow_ema) * slow_multiplier + slow_ema
+        slow_emas.append(slow_ema)
+        
+    macd_series = []
+    offset = slow - fast
+    for i in range(len(slow_emas)):
+        macd_series.append(fast_emas[i + offset] - slow_emas[i])
+        
+    if len(macd_series) < signal_period:
+        return {"macd": 0.0, "signal": 0.0, "hist": 0.0, "status": "NEUTRAL"}
+        
+    sig_multiplier = 2.0 / (signal_period + 1.0)
+    sig_ema = sum(macd_series[:signal_period]) / signal_period
+    for m in macd_series[signal_period:]:
+        sig_ema = (m - sig_ema) * sig_multiplier + sig_ema
+        
+    curr_macd = macd_series[-1]
+    curr_hist = curr_macd - sig_ema
+    prev_macd = macd_series[-2] if len(macd_series) >= 2 else curr_macd
+    
+    status = "BULLISH" if curr_hist > 0 else "BEARISH"
+    if curr_macd > sig_ema and prev_macd <= sig_ema:
+        status = "BULLISH_CROSS"
+    elif curr_macd < sig_ema and prev_macd >= sig_ema:
+        status = "BEARISH_CROSS"
+        
+    return {
+        "macd": round(curr_macd, 6),
+        "signal": round(sig_ema, 6),
+        "hist": round(curr_hist, 6),
+        "status": status
+    }
+
+def detect_rsi_divergence(lows: List[float], closes: List[float], period: int = 14) -> Dict[str, Any]:
+    """
+    Erkennt bullische RSI-Divergenzen (Smart Money Akkumulation):
+    Kurs bildet tieferes Tief (Lower Low), aber RSI bildet hoeheres Tief (Higher Low).
+    """
+    if len(closes) < 25:
+        return {"has_bullish_div": False, "description": ""}
+        
+    rsi_series = []
+    for i in range(15, len(closes) + 1):
+        sub_closes = closes[:i]
+        rsi_series.append(calculate_rsi(sub_closes, period))
+        
+    if len(rsi_series) < 10:
+        return {"has_bullish_div": False, "description": ""}
+        
+    sub_lows = lows[-len(rsi_series):]
+    recent_low_idx = -1
+    for i in range(-4, 0):
+        if sub_lows[i] == min(sub_lows[-5:]):
+            recent_low_idx = i
+            break
+            
+    prior_low_idx = -1
+    for i in range(-12, -5):
+        if sub_lows[i] == min(sub_lows[-12:-5]):
+            prior_low_idx = i
+            break
+            
+    if recent_low_idx != -1 and prior_low_idx != -1:
+        p1 = sub_lows[prior_low_idx]
+        p2 = sub_lows[recent_low_idx]
+        r1 = rsi_series[prior_low_idx]
+        r2 = rsi_series[recent_low_idx]
+        
+        if p2 < p1 and r2 > (r1 + 1.2) and r1 <= 44:
+            return {
+                "has_bullish_div": True,
+                "description": f"Bullische RSI-Divergenz (Smart Money Akkumulation: Kurs {p2:.4f} < {p1:.4f}, RSI {r2:.1f} > {r1:.1f})"
+            }
+            
+    return {"has_bullish_div": False, "description": ""}
+
+def analyze_volume_profile(volumes: List[float], opens: List[float], closes: List[float]) -> Dict[str, Any]:
+    """Analysiert Handelsvolumen gemaess Volume Spread Analysis (VSA)."""
+    if not volumes or len(volumes) < 5:
+        return {"surge_ratio": 1.0, "is_surge": False, "buyer_ratio": 50.0, "label": "Normales Volumen"}
+        
+    period = min(20, len(volumes) - 1)
+    avg_vol = sum(volumes[-period - 1:-1]) / period if period > 0 else volumes[-1]
+    curr_vol = volumes[-1]
+    surge_ratio = round(curr_vol / avg_vol, 2) if avg_vol > 0 else 1.0
+    
+    buy_vol = sum(volumes[i] for i in range(-6, 0) if closes[i] >= opens[i])
+    total_vol = sum(volumes[-6:])
+    buyer_ratio = round((buy_vol / total_vol * 100), 1) if total_vol > 0 else 50.0
+    
+    is_surge = surge_ratio >= 1.35
+    label = "Normales Volumen"
+    if is_surge and buyer_ratio >= 60.0:
+        label = f"Kaeufer-Volumenschub ({surge_ratio}x Durchschnitt)"
+    elif is_surge and buyer_ratio < 40.0:
+        label = f"Verkaeufer-Volumendruck ({surge_ratio}x Durchschnitt)"
+    elif buyer_ratio >= 65.0:
+        label = f"Kaeufer dominieren ({buyer_ratio}%)"
+        
+    return {
+        "surge_ratio": surge_ratio,
+        "is_surge": is_surge,
+        "buyer_ratio": buyer_ratio,
+        "avg_volume": round(avg_vol, 2),
+        "current_volume": round(curr_vol, 2),
+        "label": label
+    }
+
+def detect_candlestick_pattern(opens: List[float], highs: List[float], lows: List[float], closes: List[float]) -> Dict[str, Any]:
+    """Erkennt professionelle Candlestick-Reversals (Hammer, Pin Bar, Bullish Engulfing)."""
+    if len(closes) < 2:
+        return {"pattern": "STANDARD", "is_bullish": False, "label": "Standard-Kerze"}
+        
+    c = closes[-1]
+    o = opens[-1]
+    h = highs[-1]
+    l = lows[-1]
+    
+    prev_c = closes[-2]
+    prev_o = opens[-2]
+    
+    candle_range = h - l
+    if candle_range <= 0:
+        return {"pattern": "STANDARD", "is_bullish": False, "label": "Standard-Kerze"}
+        
+    body = abs(c - o)
+    lower_wick = min(o, c) - l
+    upper_wick = h - max(o, c)
+    
+    # 1. Hammer / Bullish Pin Bar
+    if lower_wick >= (body * 1.6) and upper_wick <= (body * 0.6) and lower_wick >= (candle_range * 0.5):
+        return {
+            "pattern": "BULLISH_HAMMER_PINBAR",
+            "is_bullish": True,
+            "label": "Hammer / Bullish Pin Bar (Rejection der Tiefs)"
+        }
+        
+    # 2. Bullish Engulfing
+    if prev_c < prev_o and c > o and c > prev_o and o <= prev_c:
+        return {
+            "pattern": "BULLISH_ENGULFING",
+            "is_bullish": True,
+            "label": "Bullish Engulfing (Kaeufer uebernehmen)"
+        }
+        
+    # 3. Shooting Star / Bearish Rejection
+    if upper_wick >= (body * 1.6) and lower_wick <= (body * 0.6) and upper_wick >= (candle_range * 0.5):
+        return {
+            "pattern": "BEARISH_REJECTION",
+            "is_bullish": False,
+            "label": "Shooting Star (Verkaeufer weisen Hochs ab)"
+        }
+        
+    return {"pattern": "STANDARD", "is_bullish": c >= o, "label": "Normale Kerze"}
+
+def get_multi_timeframe_trend_data(closes_1h: List[float]) -> Dict[str, Any]:
+    """Analysiert uebergeordneten 1h-Trend auf EMA 20 und EMA 50."""
+    if len(closes_1h) < 25:
+        return {"regime": "NEUTRAL", "label": "Trend Neutral", "ema_20": 0.0, "ema_50": 0.0}
+        
+    price = closes_1h[-1]
+    ema_20 = calculate_ema(closes_1h, 20)
+    ema_50 = calculate_ema(closes_1h, 50)
+    
+    is_above_ema50 = price >= ema_50
+    is_golden_trend = ema_20 >= ema_50
+    
+    if is_above_ema50 and is_golden_trend:
+        return {
+            "regime": "BULLISH_UPTREND",
+            "label": "1h Aufwaertstrend (Preis > EMA20 > EMA50)",
+            "ema_20": round(ema_20, 4),
+            "ema_50": round(ema_50, 4)
+        }
+    elif is_above_ema50 and not is_golden_trend:
+        return {
+            "regime": "PULLBACK_SUPPORT",
+            "label": "Konsolidierung ueber 1h EMA50",
+            "ema_20": round(ema_20, 4),
+            "ema_50": round(ema_50, 4)
+        }
+    elif not is_above_ema50 and price >= (ema_50 * 0.965):
+        return {
+            "regime": "POTENTIAL_REVERSAL",
+            "label": "Dip nahe EMA50 - Bodenbildung moeglich",
+            "ema_20": round(ema_20, 4),
+            "ema_50": round(ema_50, 4)
+        }
+    else:
+        return {
+            "regime": "BEARISH_DOWNTREND",
+            "label": "1h Abwaertstrend unter EMA50 - Erhoehtes Risiko",
+            "ema_20": round(ema_20, 4),
+            "ema_50": round(ema_50, 4)
+        }
+
 BTC_REGIME_CACHE: Dict[str, Any] = {"timestamp": 0, "data": None}
 
 def get_btc_market_regime() -> Dict[str, Any]:
@@ -155,8 +388,8 @@ def get_btc_market_regime() -> Dict[str, Any]:
         return BTC_REGIME_CACHE["data"]
 
     try:
-        klines_1h = binance_get("/api/v3/klines", {"symbol": "BTCUSDT", "interval": "1h", "limit": 48})
-        klines_15m = binance_get("/api/v3/klines", {"symbol": "BTCUSDT", "interval": "15m", "limit": 20})
+        klines_1h = binance_get("/fapi/v1/klines", {"symbol": "BTCUSDT", "interval": "1h", "limit": 48})
+        klines_15m = binance_get("/fapi/v1/klines", {"symbol": "BTCUSDT", "interval": "15m", "limit": 20})
 
         closes_1h = [float(k[4]) for k in klines_1h]
         closes_15m = [float(k[4]) for k in klines_15m]
@@ -237,7 +470,7 @@ def get_market_statistics(symbol: str = "BTCUSDT") -> Dict[str, Any]:
         sym = f"{sym}USDT"
         
     # 1. 24h Ticker Abfrage
-    ticker_24h = binance_get("/api/v3/ticker/24hr", {"symbol": sym})
+    ticker_24h = binance_get("/fapi/v1/ticker/24hr", {"symbol": sym})
     current_price = float(ticker_24h["lastPrice"])
     price_change_24h_pct = float(ticker_24h["priceChangePercent"])
     price_change_24h_usd = float(ticker_24h["priceChange"])
@@ -247,7 +480,7 @@ def get_market_statistics(symbol: str = "BTCUSDT") -> Dict[str, Any]:
     quote_volume_24h = float(ticker_24h["quoteVolume"])
     
     # 2. 15 Minuten Statistik (Klines 15m, letzte 4 Kerzen)
-    klines_15m = binance_get("/api/v3/klines", {"symbol": sym, "interval": "15m", "limit": 4})
+    klines_15m = binance_get("/fapi/v1/klines", {"symbol": sym, "interval": "15m", "limit": 4})
     # Vorherige geschlossene 15m Kerze vs. aktuelle Kerze
     open_15m = float(klines_15m[-1][1])
     change_15m_pct = ((current_price - open_15m) / open_15m) * 100 if open_15m > 0 else 0.0
@@ -256,7 +489,7 @@ def get_market_statistics(symbol: str = "BTCUSDT") -> Dict[str, Any]:
     low_15m = float(klines_15m[-1][3])
     
     # 3. 1 Stunde Statistik (Klines 1h, letzte 3 Kerzen)
-    klines_1h = binance_get("/api/v3/klines", {"symbol": sym, "interval": "1h", "limit": 3})
+    klines_1h = binance_get("/fapi/v1/klines", {"symbol": sym, "interval": "1h", "limit": 3})
     open_1h = float(klines_1h[-1][1])
     change_1h_pct = ((current_price - open_1h) / open_1h) * 100 if open_1h > 0 else 0.0
     vol_1h = float(klines_1h[-1][5])
@@ -264,21 +497,21 @@ def get_market_statistics(symbol: str = "BTCUSDT") -> Dict[str, Any]:
     low_1h = float(klines_1h[-1][3])
     
     # 4. 1 Monat (30 Tage) Statistik (Klines 1d, 31 Kerzen)
-    klines_1d = binance_get("/api/v3/klines", {"symbol": sym, "interval": "1d", "limit": 31})
+    klines_1d = binance_get("/fapi/v1/klines", {"symbol": sym, "interval": "1d", "limit": 31})
     open_30d = float(klines_1d[0][1])
     change_1m_pct = ((current_price - open_30d) / open_30d) * 100 if open_30d > 0 else 0.0
     high_1m = max(float(k[2]) for k in klines_1d)
     low_1m = min(float(k[3]) for k in klines_1d)
     
     # 5. 1 Jahr (52 Wochen) Statistik (Klines 1w, 53 Kerzen)
-    klines_1w = binance_get("/api/v3/klines", {"symbol": sym, "interval": "1w", "limit": 53})
+    klines_1w = binance_get("/fapi/v1/klines", {"symbol": sym, "interval": "1w", "limit": 53})
     open_1y = float(klines_1w[0][1])
     change_1y_pct = ((current_price - open_1y) / open_1y) * 100 if open_1y > 0 else 0.0
     high_1y = max(float(k[2]) for k in klines_1w)
     low_1y = min(float(k[3]) for k in klines_1w)
     
     # 6. All-Time Statistik (Klines 1M, bis zu 120 Monate)
-    klines_all = binance_get("/api/v3/klines", {"symbol": sym, "interval": "1M", "limit": 120})
+    klines_all = binance_get("/fapi/v1/klines", {"symbol": sym, "interval": "1M", "limit": 120})
     ath = max(float(k[2]) for k in klines_all)
     atl = min(float(k[3]) for k in klines_all)
     earliest_open = float(klines_all[0][1])
@@ -363,8 +596,8 @@ def get_trading_analysis(symbol: str = "BTCUSDT") -> Dict[str, Any]:
         sym = f"{sym}USDT"
         
     # Klines fuer Indikatorberechnung (15m fuer Momentum, 1h fuer Trend)
-    klines_15m = binance_get("/api/v3/klines", {"symbol": sym, "interval": "15m", "limit": 40})
-    klines_1h = binance_get("/api/v3/klines", {"symbol": sym, "interval": "1h", "limit": 40})
+    klines_15m = binance_get("/fapi/v1/klines", {"symbol": sym, "interval": "15m", "limit": 40})
+    klines_1h = binance_get("/fapi/v1/klines", {"symbol": sym, "interval": "1h", "limit": 40})
     
     closes_15m = [float(k[4]) for k in klines_15m]
     closes_1h = [float(k[4]) for k in klines_1h]
@@ -552,7 +785,7 @@ def get_chart_klines(symbol: str = "BTCUSDT", interval: str = "15m", limit: int 
         interval = "15m"
         
     limit = max(10, min(120, limit))
-    raw_klines = binance_get("/api/v3/klines", {"symbol": sym, "interval": interval, "limit": limit})
+    raw_klines = binance_get("/fapi/v1/klines", {"symbol": sym, "interval": interval, "limit": limit})
     
     result = []
     for k in raw_klines:
@@ -572,7 +805,7 @@ BEST_PICK_CACHE: Dict[str, Any] = {"timestamp": 0, "data": None}
 
 @app.get("/api/best-pick")
 def get_best_buy_pick() -> Dict[str, Any]:
-    """Scannt alle Coins und ermittelt den aktuell lukrativsten Coin fuer einen Einstieg."""
+    """Scannt alle Coins und ermittelt den aktuell lukrativsten Long- oder Short-Trade."""
     now = time.time()
     if BEST_PICK_CACHE["data"] and (now - BEST_PICK_CACHE["timestamp"] < 60):
         return BEST_PICK_CACHE["data"]
@@ -583,64 +816,48 @@ def get_best_buy_pick() -> Dict[str, Any]:
         sym = item["symbol"]
         try:
             analysis = get_trading_analysis(sym)
-            ticker = binance_get("/api/v3/ticker/24hr", {"symbol": sym})
+            ticker = binance_get("/fapi/v1/ticker/24hr", {"symbol": sym})
             price_24h_pct = float(ticker["priceChangePercent"])
-            
-            # Bewertungsscore fuer Kauf (0 bis 100)
+
             score = 50.0
             reasons = []
-            
             rsi = analysis["rsi_15m"]
-            # 1. RSI-Kriterium: Ueberverkaufte Reversal-Zonen belohnen
-            if rsi < 30:
-                score += 30.0
-                reasons.append(f"Stark ueberverkauft (RSI 15m: {rsi})")
-            elif rsi < 40:
-                score += 18.0
-                reasons.append(f"Attraktiver Dip-Bereich (RSI 15m: {rsi})")
-            elif rsi > 70:
-                score -= 30.0
-                reasons.append(f"Ueberkauft (RSI 15m: {rsi})")
-                
-            # 2. Naehe zur optimalen Kauf-Range und Support
             range_pos = analysis.get("range_position_pct", 50.0)
-            if range_pos <= 22:
-                score += 30.0
-                reasons.append(f"Direkt am Range-Boden ({range_pos}% der Handelsspanne)")
-            elif range_pos <= 35:
-                score += 22.0
-                reasons.append(f"In der optimalen Kauf-Range ({range_pos}% der Handelsspanne)")
-            elif range_pos > 72:
-                score -= 25.0
-                reasons.append(f"Nahe oberem Range-Widerstand ({range_pos}%)")
-                
-            dist_buy = analysis.get("distance_to_buy_pct", 99.0)
-            if dist_buy == 0.0:
-                score += 15.0
-                reasons.append("Bereits in der Kauf-Zone")
-            elif dist_buy <= 1.5:
-                score += 8.0
-                reasons.append(f"Nur +{dist_buy}% bis zur Kauf-Range")
-                    
-            # 3. Signal-Bonus
-            if analysis["signal"] == "BUY":
+            signal = analysis["signal"]
+            
+            # Basis-Score abhaengig von Signal-Typ
+            if signal == "BUY":
                 score += 25.0
-                reasons.append(f"Signal: {analysis['signal_label']}")
-            elif analysis["signal"] == "SELL":
-                score -= 35.0
+                reasons.append(f"Long-Signal: {analysis['signal_label']}")
+                if rsi < 30: score += 20.0
+                elif rsi < 45: score += 10.0
                 
-            # 4. CRV und Potenzial
+                if range_pos <= 25: score += 20.0
+                elif range_pos <= 40: score += 10.0
+            elif signal == "SELL":
+                score += 25.0
+                reasons.append(f"Short-Signal: {analysis['signal_label']}")
+                if rsi > 70: score += 20.0
+                elif rsi > 60: score += 10.0
+                
+                if range_pos >= 75: score += 20.0
+                elif range_pos >= 60: score += 10.0
+            else:
+                score -= 20.0
+                reasons.append("Kein klares Signal (Warten)")
+
+            # CRV Bonus
             setup = analysis["trade_setup"]
             tp2_pct = setup.get("take_profit_2_pct", 0)
             sl_pct = setup.get("stop_loss_pct", 1)
             if sl_pct > 0:
                 crv_calc = tp2_pct / sl_pct
-                if crv_calc >= 2.5:
-                    score += 15.0
+                if crv_calc >= 2.0:
+                    score += 10.0
                     reasons.append(f"Starkes CRV ({setup['crv']})")
-                    
+
             final_score = max(5.0, min(99.0, round(score, 1)))
-            
+
             evaluated_coins.append({
                 "symbol": sym,
                 "coin": item["coin"],
@@ -668,10 +885,9 @@ def get_best_buy_pick() -> Dict[str, Any]:
             })
         except Exception:
             continue
-            
-    # Nach bestem Score sortieren
+
     evaluated_coins.sort(key=lambda x: x["score"], reverse=True)
-    
+
     best = evaluated_coins[0] if evaluated_coins else None
     result = {
         "best_pick": best,
@@ -712,7 +928,7 @@ def get_trading_balance() -> Dict[str, Any]:
 
 @app.post("/api/trading/order")
 def execute_trade_order(payload: Dict[str, Any]) -> Dict[str, Any]:
-    """Platziert eine Kauf- oder Verkaufsorder im Binance Testnet und uebernimmt sie in die offenen Trades."""
+    """Platziert eine Order im Binance Futures Testnet."""
     symbol = payload.get("symbol", "BTCUSDT").upper().strip()
     if not symbol.endswith("USDT") and not symbol.endswith("BUSD"):
         symbol = f"{symbol}USDT"
@@ -720,32 +936,35 @@ def execute_trade_order(payload: Dict[str, Any]) -> Dict[str, Any]:
     side = payload.get("side", "BUY").upper()
     order_type = payload.get("order_type", "MARKET").upper()
     quantity = float(payload["quantity"]) if payload.get("quantity") else None
-    quote_order_qty = float(payload["quote_order_qty"]) if payload.get("quote_order_qty") else None
     price = float(payload.get("price")) if payload.get("price") else None
-    
+    reduce_only = bool(payload.get("reduce_only", False))
+
     order_res = binance_trader.create_order(
         symbol=symbol,
         side=side,
         order_type=order_type,
         quantity=quantity,
-        quote_order_qty=quote_order_qty,
         price=price,
+        reduce_only=reduce_only,
         proxies=PROXIES
     )
 
-    if side == "BUY":
+    if side == "BUY" or side == "SELL":
         curr_price = get_coin_current_price(symbol) or 1.0
         avg_price = curr_price
         executed_qty = quantity or 0.0
-        actual_spent = quote_order_qty or (quantity * curr_price if quantity else 150.0)
+        actual_spent = (quantity * curr_price) if quantity else 150.0
 
         if order_res.get("success"):
             data = order_res.get("data", {})
             executed_qty = float(data.get("executedQty", executed_qty or 0.0))
-            fills = data.get("fills", [])
-            if fills:
-                avg_price = sum(float(f["price"]) * float(f["qty"]) for f in fills) / (executed_qty or 1.0)
-            if executed_qty > 0 and not quote_order_qty:
+            # Fallback if executedQty is just returned as origQty
+            if executed_qty <= 0:
+                executed_qty = float(data.get("origQty", 0.0))
+            avg_price = float(data.get("avgPrice", avg_price))
+            if avg_price <= 0:
+                avg_price = curr_price
+            if executed_qty > 0:
                 actual_spent = round(avg_price * executed_qty, 2)
         else:
             # Fallback: Virtuelle Position anlegen falls Testnet-Netzwerk blockiert
@@ -844,7 +1063,7 @@ def get_relevant_prices() -> Dict[str, float]:
     symbols = get_relevant_symbols()
     try:
         symbols_json = json.dumps(symbols, separators=(',', ':'))
-        url = f"https://api.binance.com/api/v3/ticker/price?symbols={urllib.parse.quote(symbols_json)}"
+        url = f"https://fapi.binance.com/fapi/v1/ticker/price?symbols={urllib.parse.quote(symbols_json)}"
         kwargs: Dict[str, Any] = {"timeout": 6}
         if PROXIES:
             kwargs["proxies"] = PROXIES
@@ -865,7 +1084,7 @@ def get_coin_current_price(symbol: str) -> float:
     if sym in prices:
         return prices[sym]
     try:
-        res = binance_get("/api/v3/ticker/price", {"symbol": sym})
+        res = binance_get("/fapi/v1/ticker/price", {"symbol": sym})
         price = float(res.get("price", 0.0))
         GLOBAL_PRICES_CACHE[sym] = price
         return price
